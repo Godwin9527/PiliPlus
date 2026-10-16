@@ -24,7 +24,7 @@
 
 ## 2. 改动总览
 
-本 fork 相对上游的全部改动如下，**共涉及 7 个文件、4 个定制提交**。
+本 fork 相对上游的全部改动如下，**共涉及 7 个文件、5 个定制提交**。
 
 | # | 文件 | 改动类型 | 是否属于"定制"（禁止回退） |
 |---|---|---|---|
@@ -33,7 +33,7 @@
 | 3 | `lib/common/widgets/video_card/video_card_h.dart` | 行为修改 | ✅ 是 |
 | 4 | `lib/pages/member_video/widgets/video_card_h_member_video.dart` | 行为修改 | ✅ 是 |
 | 5 | `lib/utils/update.dart` | 新增镜像回退逻辑 | ✅ 是 |
-| 6 | `lib/scripts/build.ps1` | 构建脚本：注入仓库标识 | ✅ 是 |
+| 6 | `lib/scripts/build.ps1` | 构建脚本：注入仓库标识 + 版本号跟随 Release tag | ✅ 是 |
 | 7 | `.gitignore` | 新增忽略规则 | ✅ 是 |
 
 > **重要变更（2026-10-16 第二次优化）**：原先对 `lib/http/api.dart`、`lib/common/constants.dart`、`.github/workflows/build.yml` 的**硬编码修改已全部撤销**，改为「构建参数注入」。现在这三个文件**与上游保持一致**，同步上游时**不会再冲突**。详见第 3.2 节。
@@ -41,6 +41,7 @@
 对应提交：
 
 ```
+<本次提交>  fix: 版本号跟随 Release tag，修复 App 内版本号不更新
 069f5835d  feat: 检查更新支持镜像回退，解决国内 DNS 污染导致无法检测更新
 430d6631b  refactor: URL 改为构建参数注入，消除上游同步冲突
 9a819ea9e  chore: 忽略本地签名密钥目录 .keys
@@ -295,7 +296,54 @@ static List<(String, String)> get _sources => [
 
 ---
 
-### 3.4 `.gitignore`
+### 3.4 版本号跟随 Release tag（2026-10-17 第四次优化）
+
+**问题背景**：发版时 `-f tag=v2.1.9` 只用于**命名 GitHub Release**，从不参与构建。App 内版本号来自 `pubspec.yaml` 的 `version: 2.1.6+1`（从未改动），因此出现「Release 是 v2.1.9，但 App 里显示 2.1.6」的不一致。
+
+**改动位置**：`lib/scripts/build.ps1`（约第 12–32 行）
+
+新增：从 GitHub 事件载荷中取出 `workflow_dispatch` 的 `tag` 输入，作为版本名。
+
+```powershell
+$releaseTag = $null
+if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_EVENT_PATH) -and (Test-Path -Path $env:GITHUB_EVENT_PATH)) {
+    try {
+        $releaseTag = (Get-Content -Path $env:GITHUB_EVENT_PATH -Raw -Encoding UTF8 | ConvertFrom-Json).inputs.tag
+    }
+    catch {
+        $releaseTag = $null
+    }
+}
+```
+
+并在读取 `pubspec.yaml` 版本的那一行后追加：
+
+```powershell
+# tag 优先（v2.1.10 -> 2.1.10）；tag 缺失或格式不符时回退 pubspec.yaml 原值。
+if (-not [string]::IsNullOrWhiteSpace($releaseTag) -and $releaseTag -match '^[vV]?(\d+\.\d+\.\d+)') {
+    $versionName = $matches[1]
+}
+```
+
+**关键设计**：
+- 通过 `GITHUB_EVENT_PATH`（GitHub Actions 自动提供的环境变量）读取事件 JSON，**无需修改任何 workflow 文件**，5 个平台共用同一份 `build.ps1` 自动生效
+- `tag` 缺失（本地构建）或格式非法（如 `latest`）时**自动回退** `pubspec.yaml` 原值，不影响原有行为
+- Android 仍保留 `-<commit hash 前9位>` 后缀；其他平台不带后缀（与上游原行为一致）
+
+**实测结果**（pwsh 7，与 CI 一致）：
+
+| 场景 | 参数 | 得到的 `pili.name` |
+|---|---|---|
+| `tag=v2.1.10` | android | `2.1.10-a38a5d427` |
+| `tag=v2.1.10` | 无（Windows/macOS/Linux） | `2.1.10` |
+| 无 tag | android | `2.1.6-a38a5d427`（回退） |
+| `tag=latest`（非法） | android | `2.1.6-a38a5d427`（回退） |
+
+> ⚠️ 合并上游时：**保留**这段 tag 推导逻辑。若上游重写了 `build.ps1` 的版本读取部分，需把该逻辑重新套用到新写法上。
+
+---
+
+### 3.5 `.gitignore`
 
 新增一行（文件末尾附近）：
 
@@ -350,6 +398,7 @@ git push origin main
 - [ ] `lib/common/constants.dart` 的 `sourceCodeUrl` 仍通过 `String.fromEnvironment('pili.repo', ...)` 派生
 - [ ] `lib/http/api.dart` 的 `latestApp` 仍通过 `String.fromEnvironment('pili.repo', ...)` 派生，且**使用的是双引号**
 - [ ] `lib/scripts/build.ps1` 仍包含 `$env:GITHUB_REPOSITORY` 注入逻辑，且**为空时省略 `pili.repo` 键**
+- [ ] `lib/scripts/build.ps1` 仍包含从 `$env:GITHUB_EVENT_PATH` 读取 `inputs.tag` 的版本推导逻辑，且保留了 `-match '^[vV]?(\d+\.\d+\.\d+)'` 的格式校验与回退分支
 - [ ] `lib/utils/update.dart` 中仍存在 `_mirror` 常量与 `_fetchLatestRelease()`，且 `_sources` 保持「直连在前、镜像在后」的顺序
 - [ ] `lib/utils/update.dart` 的 `onDownload` 仍支持 `forceMirror` 参数，下载 URL 仍带 `$prefix` 前缀
 - [ ] `.gitignore` 中仍保留 `/.keys/`
@@ -366,7 +415,7 @@ git push origin main
 |---|---|---|
 | `lib/http/api.dart` | 🟢 **低**（已消除） | 与上游一致，**直接接受上游版本**。仅在需保留 `pili.repo` 注释时作最小保留 |
 | `lib/common/constants.dart` | 🟢 **低**（已消除） | 同上 |
-| `lib/scripts/build.ps1` | 🟡 中 | 上游若改此文件，**保留 fork 的 `pili.repo` 注入逻辑**，同时接受上游其他改动 |
+| `lib/scripts/build.ps1` | 🟡 中 | 上游若改此文件，**保留 fork 的 `pili.repo` 注入逻辑与 tag 版本推导逻辑**，同时接受上游其他改动 |
 | `lib/utils/update.dart` | 🟡 中 | **保留镜像回退结构**（`_mirror` / `_sources` / `_fetchLatestRelease` / `forceMirror`）；若上游改写了检查逻辑，需把镜像回退重新套用到新逻辑上，并保留 `forceMirror` 下载入口 |
 | `lib/common/widgets/video_popup_menu.dart` | 🟡 中 | **保留函数抽取结构**；若上游新增/修改菜单项，将其并入 `buildVideoMenuItems` 函数体 |
 | 3 个 `video_card*.dart` | 🟡 中 | 保留 `onLongPress` → `showVideoPopupMenu` 的调用；接受上游其他改动 |
@@ -391,6 +440,7 @@ git push origin main
 6. ❌ 不得在未告知用户的情况下，把本 fork 的定制"清理"为上游原状
 7. ❌ 不得在 `lib/scripts/build.ps1` 中把 `pili.repo` 写成空字符串（会导致 URL 错误）
 8. ❌ 不得移除 `lib/utils/update.dart` 的镜像回退机制（`_mirror` / `_sources` / `_fetchLatestRelease`），否则大陆网络环境下检查更新会再次失效
+9. ❌ 不得移除 `lib/scripts/build.ps1` 的 tag 版本推导逻辑（否则 App 内版本号会退回固定值，与 Release tag 不一致）
 
 ---
 
@@ -418,9 +468,13 @@ gh workflow run Build --repo Godwin9527/PiliPlus \
 
 ### 7.3 版本号机制
 
-- `lib/scripts/build.ps1` 用 `git rev-list --count HEAD` 作为 versionCode
+- **版本名（`pili.name`）**：优先取 `workflow_dispatch` 的 `tag` 输入（去掉前导 `v`），无 tag 或格式非法时回退 `pubspec.yaml` 的 `version`
+  - Android 会再追加 `-<commit hash 前9位>`，例如 `2.1.10-a38a5d427`
+  - 其他平台为纯版本号，例如 `2.1.10`
+- **版本码（`pili.code`）**：`git rev-list --count HEAD`（提交总数）
 - 构建时写入 `pili_release.json`，其中 `pili.time` 作为 `BuildConfig.buildTime`
-- **App 内更新检测**依赖 `buildTime` 与 Release `created_at` 的比较，故此机制不可破坏
+- **App 内更新检测**依赖 `buildTime` 与 Release `created_at` 的比较（**与版本号无关**），故此机制不可破坏
+- 发版时**必须**传入新 `tag`，否则：① 不创建 Release；② App 内版本号停在旧值
 
 ---
 
@@ -431,6 +485,7 @@ gh workflow run Build --repo Godwin9527/PiliPlus \
 | 2026-10-16 | 初版。记录长按菜单改造、更新源指向 fork、CI 仓库名适配、.keys 忽略规则 |
 | 2026-10-16 | **第二次优化**：URL 改为构建参数（`pili.repo`）注入，撤销 `api.dart` / `constants.dart` / `build.yml` 的硬编码改动，上述文件恢复与上游一致；新增第 9 节「文档维护契约」 |
 | 2026-10-17 | **第三次优化**：`lib/utils/update.dart` 新增镜像回退（直连失败自动走 `gh-proxy.com`），修复大陆 DNS 污染导致检查更新失效的问题；新增第 3.3 节 |
+| 2026-10-17 | **第四次优化**：`lib/scripts/build.ps1` 新增 tag 版本推导，修复「Release tag 与 App 内版本号不一致」；新增第 3.4 节，原 3.4 `.gitignore` 顺延为 3.5 |
 
 ---
 

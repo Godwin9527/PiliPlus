@@ -9,9 +9,27 @@ try {
 
     $commitHash = (git rev-parse HEAD).Trim()
 
+    # Release tag（仅 CI 发版时存在），形如 v2.1.10。
+    # workflow_dispatch 的 tag 输入只用于命名 GitHub Release，默认不会进入构建，
+    # 因此 App 内显示的版本号会一直停在 pubspec.yaml 的旧值（如 2.1.6）。
+    # 这里从 GitHub 事件载荷中取出该 tag，让 App 版本号与 Release 保持一致。
+    $releaseTag = $null
+    if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_EVENT_PATH) -and (Test-Path -Path $env:GITHUB_EVENT_PATH)) {
+        try {
+            $releaseTag = (Get-Content -Path $env:GITHUB_EVENT_PATH -Raw -Encoding UTF8 | ConvertFrom-Json).inputs.tag
+        }
+        catch {
+            $releaseTag = $null
+        }
+    }
+
     $updatedContent = foreach ($line in (Get-Content -Path 'pubspec.yaml' -Encoding UTF8)) {
         if ($line -match '^\s*version:\s*([\d\.]+)') {
             $versionName = $matches[1]
+            # tag 优先（v2.1.10 -> 2.1.10）；tag 缺失或格式不符时回退 pubspec.yaml 原值。
+            if (-not [string]::IsNullOrWhiteSpace($releaseTag) -and $releaseTag -match '^[vV]?(\d+\.\d+\.\d+)') {
+                $versionName = $matches[1]
+            }
             if ($Arg -eq 'android') {
                 $versionName += '-' + $commitHash.Substring(0, 9)
             }
