@@ -16,25 +16,65 @@ import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
 abstract final class Update {
+  /// GitHub 加速镜像前缀（国内网络环境用）。
+  ///
+  /// 直连 `api.github.com` 失败时（典型原因：DNS 污染把域名解析到错误 IP），
+  /// 会把原始 URL 直接拼在本前缀之后重试，例如：
+  /// `https://gh-proxy.com/https://api.github.com/repos/OWNER/REPO/releases`
+  ///
+  /// 可通过构建参数 `pili.mirror` 覆盖；置为空字符串则禁用镜像回退。
+  static const String _mirror = String.fromEnvironment(
+    'pili.mirror',
+    defaultValue: 'https://gh-proxy.com/',
+  );
+
+  /// 本次检查更新中实际可用的地址前缀（空串表示直连 GitHub）。
+  /// 供 [onDownload] 复用，避免下载时再踩同样的网络问题。
+  static String _downloadPrefix = '';
+
+  /// 更新检查的候选地址：直连优先，镜像兜底。
+  static List<(String, String)> get _sources => [
+    ('', Api.latestApp),
+    if (_mirror.isNotEmpty) (_mirror, '$_mirror${Api.latestApp}'),
+  ];
+
+  /// 依次尝试各候选地址，返回最新一个 release 的 JSON；全部失败返回 null。
+  static Future<Map?> _fetchLatestRelease() async {
+    for (final (prefix, url) in _sources) {
+      try {
+        final res = await Request().get(
+          url,
+          options: Options(
+            headers: {'user-agent': BrowserUa.mob},
+            extra: {'account': const NoAccount()},
+          ),
+        );
+        final resData = res.data;
+        if (resData is List && resData.isNotEmpty && resData[0] is Map) {
+          _downloadPrefix = prefix;
+          return resData[0] as Map;
+        }
+      } catch (e) {
+        if (kDebugMode) debugPrint('check update failed via "$url": $e');
+      }
+    }
+    return null;
+  }
+
   // 检查更新
   static Future<void> checkUpdate([bool isAuto = true]) async {
     if (kDebugMode) return;
     SmartDialog.dismiss();
-    try {
-      final res = await Request().get(
-        Api.latestApp,
-        options: Options(
-          headers: {'user-agent': BrowserUa.mob},
-          extra: {'account': const NoAccount()},
-        ),
-      );
-      if (res.data is Map || res.data.isEmpty) {
-        if (!isAuto) {
-          SmartDialog.showToast('检查更新失败，GitHub接口未返回数据，请检查网络');
-        }
-        return;
+
+    final data = await _fetchLatestRelease();
+    if (data == null) {
+      if (!isAuto) {
+        SmartDialog.showToast('检查更新失败，请检查网络或代理设置');
       }
-      final data = res.data[0];
+      return;
+    }
+
+    try {
       final int latest =
           DateTime.parse(data['created_at']).millisecondsSinceEpoch ~/ 1000;
       if (BuildConfig.buildTime >= latest) {
@@ -46,8 +86,13 @@ abstract final class Update {
           animationType: SmartAnimationType.centerFade_otherSlide,
           builder: (context) {
             final colorScheme = ColorScheme.of(context);
-            Widget downloadBtn(String text, {String? ext}) => TextButton(
-              onPressed: () => onDownload(data, ext: ext),
+            Widget downloadBtn(
+              String text, {
+              String? ext,
+              bool mirror = false,
+            }) => TextButton(
+              onPressed: () =>
+                  onDownload(data, ext: ext, forceMirror: mirror),
               child: Text(text),
             );
             return AlertDialog(
@@ -103,8 +148,11 @@ abstract final class Update {
                   downloadBtn('rpm', ext: 'rpm'),
                   downloadBtn('deb', ext: 'deb'),
                   downloadBtn('targz', ext: 'tar.gz'),
-                ] else
+                ] else ...[
                   downloadBtn('Github'),
+                  // 直连下载失败（如国内 DNS 污染）时的备选入口
+                  if (_mirror.isNotEmpty) downloadBtn('镜像', mirror: true),
+                ],
               ],
             );
           },
@@ -116,8 +164,16 @@ abstract final class Update {
   }
 
   // 下载适用于当前系统的安装包
-  static Future<void> onDownload(Map data, {String? ext}) async {
+  //
+  // [forceMirror] 为 true 时强制走镜像前缀（用于直连下载失败的手动兜底）。
+  // 否则复用 [checkUpdate] 中探测到的可用前缀：直连可用就走直连，否则走镜像。
+  static Future<void> onDownload(
+    Map data, {
+    String? ext,
+    bool forceMirror = false,
+  }) async {
     SmartDialog.dismiss();
+    final prefix = forceMirror && _mirror.isNotEmpty ? _mirror : _downloadPrefix;
     try {
       void download(String plat) {
         if (data['assets'].isNotEmpty) {
@@ -125,7 +181,7 @@ abstract final class Update {
             final String name = i['name'];
             if (name.contains(plat) &&
                 (ext == null || ext.isEmpty ? true : name.endsWith(ext))) {
-              PageUtils.launchURL(i['browser_download_url']);
+              PageUtils.launchURL('$prefix${i['browser_download_url']}');
               return;
             }
           }
@@ -143,7 +199,7 @@ abstract final class Update {
       }
     } catch (e) {
       if (kDebugMode) debugPrint('download error: $e');
-      PageUtils.launchURL('${Constants.sourceCodeUrl}/releases/latest');
+      PageUtils.launchURL('$prefix${Constants.sourceCodeUrl}/releases/latest');
     }
   }
 }
