@@ -17,14 +17,14 @@
 | 默认分支 | `main` |
 | 项目类型 | Flutter 应用（BiliBili 第三方客户端） |
 | Flutter 版本 | `3.47.7`（见 `.fvmrc`） |
-| 本文件最后更新 | 2026-10-16 |
-| 最后更新的定制提交 | `9a819ea9e` |
+| 本文件最后更新 | 2026-10-17 |
+| 最后更新的定制提交 | `069f5835d` |
 
 ---
 
 ## 2. 改动总览
 
-本 fork 相对上游的全部改动如下，**共涉及 6 个文件、3 个定制提交**。
+本 fork 相对上游的全部改动如下，**共涉及 7 个文件、4 个定制提交**。
 
 | # | 文件 | 改动类型 | 是否属于"定制"（禁止回退） |
 |---|---|---|---|
@@ -32,15 +32,17 @@
 | 2 | `lib/common/widgets/video_card/video_card_v.dart` | 行为修改 | ✅ 是 |
 | 3 | `lib/common/widgets/video_card/video_card_h.dart` | 行为修改 | ✅ 是 |
 | 4 | `lib/pages/member_video/widgets/video_card_h_member_video.dart` | 行为修改 | ✅ 是 |
-| 5 | `lib/scripts/build.ps1` | 构建脚本：注入仓库标识 | ✅ 是 |
-| 6 | `.gitignore` | 新增忽略规则 | ✅ 是 |
+| 5 | `lib/utils/update.dart` | 新增镜像回退逻辑 | ✅ 是 |
+| 6 | `lib/scripts/build.ps1` | 构建脚本：注入仓库标识 | ✅ 是 |
+| 7 | `.gitignore` | 新增忽略规则 | ✅ 是 |
 
 > **重要变更（2026-10-16 第二次优化）**：原先对 `lib/http/api.dart`、`lib/common/constants.dart`、`.github/workflows/build.yml` 的**硬编码修改已全部撤销**，改为「构建参数注入」。现在这三个文件**与上游保持一致**，同步上游时**不会再冲突**。详见第 3.2 节。
 
 对应提交：
 
 ```
-<最新>       refactor: URL 改为构建参数注入，消除上游同步冲突
+069f5835d  feat: 检查更新支持镜像回退，解决国内 DNS 污染导致无法检测更新
+430d6631b  refactor: URL 改为构建参数注入，消除上游同步冲突
 9a819ea9e  chore: 忽略本地签名密钥目录 .keys
 2202c3061  长按视频卡片改为弹出三点菜单，并将更新源指向 fork 仓库
 ```
@@ -224,7 +226,76 @@ dart run --define=pili.repo=Godwin9527/PiliPlus → https://api.github.com/repos
 
 ---
 
-### 3.3 `.gitignore`
+### 3.3 检查更新支持「镜像回退」（2026-10-17 第三次优化）
+
+**需求背景**：中国大陆网络环境下，`api.github.com` 的 DNS 常被污染（实测解析到 `47.128.243.133` 等无关 IP，而权威解析应为 `20.205.243.168`），导致 App 内「检查更新」长期失败（表现为「上传 251B / 下载 0B」）。
+
+**改动文件**：`lib/utils/update.dart`（**仅此一个文件**）
+
+#### (a) 新增镜像前缀常量
+
+```dart
+/// 可通过构建参数 `pili.mirror` 覆盖；置为空字符串则禁用镜像回退。
+static const String _mirror = String.fromEnvironment(
+  'pili.mirror',
+  defaultValue: 'https://gh-proxy.com/',
+);
+```
+
+#### (b) 候选地址链（直连优先，镜像兜底）
+
+```dart
+static List<(String, String)> get _sources => [
+  ('', Api.latestApp),
+  if (_mirror.isNotEmpty) (_mirror, '$_mirror${Api.latestApp}'),
+];
+```
+
+镜像 URL 的构造方式是**直接把原始 URL 拼在前缀之后**：
+`https://gh-proxy.com/` + `https://api.github.com/repos/OWNER/REPO/releases`
+
+#### (c) `_fetchLatestRelease()` 依次尝试
+
+新抽出的私有方法逐个尝试候选地址，**校验响应必须是「非空 List 且首元素为 Map」**才算成功，并把成功的前缀记入 `_downloadPrefix` 供下载复用。任一地址抛异常或返回异常结构则继续下一个。
+
+> ⚠️ **原实现的 bug（已修）**：旧代码判断条件是 `if (res.data is Map || res.data.isEmpty)`，对**字符串/HTML 响应**不做校验，且失败后直接 `return`，不重试。新实现改为正向校验「是 List 且非空」，更健壮。
+
+#### (d) 下载步骤复用前缀
+
+`onDownload` 新增 `forceMirror` 参数：
+- 默认使用 `_downloadPrefix`（即检查更新时探测成功的那个前缀）
+- `forceMirror: true` 时强制走镜像
+
+弹窗中为 Android 等平台新增了一个 **「镜像」** 按钮，作为直连下载失败时的手动兜底：
+
+```dart
+] else ...[
+  downloadBtn('Github'),
+  if (_mirror.isNotEmpty) downloadBtn('镜像', mirror: true),
+],
+```
+
+#### 为什么默认启用镜像
+
+镜像**仅作为兜底**：直连成功时完全不会用到它。因此对非大陆网络环境无副作用，无需开关。
+
+#### 实测验证
+
+- `https://gh-proxy.com/https://api.github.com/repos/Godwin9527/PiliPlus/releases` → HTTP 200，返回正确 JSON 数组
+- 镜像对 release 资源下载同样有效（HTTP 206 分段请求正常）
+- 已用 Dart 单独验证：候选链构造正确、直连抛异常时能正确回退到镜像、`Map?` 类型提升在闭包内成立
+
+#### 其他镜像的实测结果（供将来替换参考）
+
+| 镜像 | 对 API 端点 | 结论 |
+|---|---|---|
+| `https://gh-proxy.com/` | ✅ 200 稳定 | **当前采用** |
+| `ghfast.top` / `ghproxy.net` / `gh.llkk.cc` | ❌ 403 | 不支持 API 代理 |
+| `api.kkgithub.com` / `hub.gitmirror.com` | ❌ 连接失败 | 不可用 |
+
+---
+
+### 3.4 `.gitignore`
 
 新增一行（文件末尾附近）：
 
@@ -279,6 +350,8 @@ git push origin main
 - [ ] `lib/common/constants.dart` 的 `sourceCodeUrl` 仍通过 `String.fromEnvironment('pili.repo', ...)` 派生
 - [ ] `lib/http/api.dart` 的 `latestApp` 仍通过 `String.fromEnvironment('pili.repo', ...)` 派生，且**使用的是双引号**
 - [ ] `lib/scripts/build.ps1` 仍包含 `$env:GITHUB_REPOSITORY` 注入逻辑，且**为空时省略 `pili.repo` 键**
+- [ ] `lib/utils/update.dart` 中仍存在 `_mirror` 常量与 `_fetchLatestRelease()`，且 `_sources` 保持「直连在前、镜像在后」的顺序
+- [ ] `lib/utils/update.dart` 的 `onDownload` 仍支持 `forceMirror` 参数，下载 URL 仍带 `$prefix` 前缀
 - [ ] `.gitignore` 中仍保留 `/.keys/`
 - [ ] `.github/workflows/build.yml` 与上游一致（此文件已**不再**做 fork 定制；若上游有改动，直接接受）
 - [ ] 全仓搜索 `bggRGjQaUbCoE`，确认**代码与配置中**无残留（注释、issue 链接中的该字样属正常，无需修改）
@@ -294,6 +367,7 @@ git push origin main
 | `lib/http/api.dart` | 🟢 **低**（已消除） | 与上游一致，**直接接受上游版本**。仅在需保留 `pili.repo` 注释时作最小保留 |
 | `lib/common/constants.dart` | 🟢 **低**（已消除） | 同上 |
 | `lib/scripts/build.ps1` | 🟡 中 | 上游若改此文件，**保留 fork 的 `pili.repo` 注入逻辑**，同时接受上游其他改动 |
+| `lib/utils/update.dart` | 🟡 中 | **保留镜像回退结构**（`_mirror` / `_sources` / `_fetchLatestRelease` / `forceMirror`）；若上游改写了检查逻辑，需把镜像回退重新套用到新逻辑上，并保留 `forceMirror` 下载入口 |
 | `lib/common/widgets/video_popup_menu.dart` | 🟡 中 | **保留函数抽取结构**；若上游新增/修改菜单项，将其并入 `buildVideoMenuItems` 函数体 |
 | 3 个 `video_card*.dart` | 🟡 中 | 保留 `onLongPress` → `showVideoPopupMenu` 的调用；接受上游其他改动 |
 | `.github/workflows/build.yml` | 🟢 **低**（已消除） | 与上游一致，**直接接受上游版本** |
@@ -316,6 +390,7 @@ git push origin main
 5. ❌ 不得提交 `.keys/` 目录下的任何文件
 6. ❌ 不得在未告知用户的情况下，把本 fork 的定制"清理"为上游原状
 7. ❌ 不得在 `lib/scripts/build.ps1` 中把 `pili.repo` 写成空字符串（会导致 URL 错误）
+8. ❌ 不得移除 `lib/utils/update.dart` 的镜像回退机制（`_mirror` / `_sources` / `_fetchLatestRelease`），否则大陆网络环境下检查更新会再次失效
 
 ---
 
@@ -355,6 +430,7 @@ gh workflow run Build --repo Godwin9527/PiliPlus \
 |---|---|
 | 2026-10-16 | 初版。记录长按菜单改造、更新源指向 fork、CI 仓库名适配、.keys 忽略规则 |
 | 2026-10-16 | **第二次优化**：URL 改为构建参数（`pili.repo`）注入，撤销 `api.dart` / `constants.dart` / `build.yml` 的硬编码改动，上述文件恢复与上游一致；新增第 9 节「文档维护契约」 |
+| 2026-10-17 | **第三次优化**：`lib/utils/update.dart` 新增镜像回退（直连失败自动走 `gh-proxy.com`），修复大陆 DNS 污染导致检查更新失效的问题；新增第 3.3 节 |
 
 ---
 

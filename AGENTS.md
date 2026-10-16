@@ -82,9 +82,10 @@ dart run --define=pili.repo=Godwin9527/PiliPlus <脚本>   # 验证 pili.repo �
 ## 关键注意事项
 
 1. **构建参数 `pili.repo`**：仓库标识通过构建参数注入（见 `lib/scripts/build.ps1`），源码中**不应出现** `Godwin9527` 硬编码。
-2. **签名密钥**：本地 `.keys/` 目录已被 gitignore，**绝不提交**。GitHub Secrets 已配置。
-3. **不要提交** `pili_release.json`（构建时生成，已 gitignore）。
-4. **`.github/workflows/build.yml` 与上游保持一致** —— 不要在此文件做 fork 定制。
+2. **镜像回退**：`lib/utils/update.dart` 内置了「直连 GitHub 失败 → 自动走 `gh-proxy.com` 镜像」的逻辑，用于应对国内 DNS 污染。**不要移除**。
+3. **签名密钥**：本地 `.keys/` 目录已被 gitignore，**绝不提交**。GitHub Secrets 已配置。
+4. **不要提交** `pili_release.json`（构建时生成，已 gitignore）。
+5. **`.github/workflows/build.yml` 与上游保持一致** —— 不要在此文件做 fork 定制。
 
 ---
 
