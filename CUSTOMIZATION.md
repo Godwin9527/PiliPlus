@@ -3,6 +3,8 @@
 > **本文件用途**：记录本仓库（fork）相对于上游原仓库所做的**全部定制改动**，供后续维护者与 AI 助手在「同步上游更新」时参照执行。
 >
 > **给 AI 助手的强制阅读须知**：在处理本仓库的任何合并 / 同步 / 冲突解决任务之前，**必须完整阅读本文件**。本文件中标记为「定制改动」的内容均为**有意为之**，**不得**被当作过时代码、冗余代码或错误代码而回退、删除或"优化"。违反此约束将导致用户功能丢失。
+>
+> **⚠️ 文档维护义务（对 AI 的硬性要求）**：本文件是「活文档」。任何修改本仓库代码的行为，**都必须同步更新本文件的对应章节**（第 2 节改动总览、第 3 节逐项详解、第 5 节冲突策略、第 8 节变更记录）。这是任务不可分割的一部分，**不是可选项**。若你修改了代码却未更新本文件，视为任务未完成。此义务同样适用于未来任何接手本仓库的 AI 助手 —— **无需用户提醒，自行执行**。详见第 9 节。
 
 ---
 
@@ -22,7 +24,7 @@
 
 ## 2. 改动总览
 
-本 fork 相对上游的全部改动如下，**共涉及 8 个文件、2 个定制提交**。
+本 fork 相对上游的全部改动如下，**共涉及 6 个文件、3 个定制提交**。
 
 | # | 文件 | 改动类型 | 是否属于"定制"（禁止回退） |
 |---|---|---|---|
@@ -30,14 +32,15 @@
 | 2 | `lib/common/widgets/video_card/video_card_v.dart` | 行为修改 | ✅ 是 |
 | 3 | `lib/common/widgets/video_card/video_card_h.dart` | 行为修改 | ✅ 是 |
 | 4 | `lib/pages/member_video/widgets/video_card_h_member_video.dart` | 行为修改 | ✅ 是 |
-| 5 | `lib/http/api.dart` | 常量指向变更 | ✅ 是 |
-| 6 | `lib/common/constants.dart` | 常量指向变更 | ✅ 是 |
-| 7 | `.github/workflows/build.yml` | CI 配置变更 | ✅ 是 |
-| 8 | `.gitignore` | 新增忽略规则 | ✅ 是 |
+| 5 | `lib/scripts/build.ps1` | 构建脚本：注入仓库标识 | ✅ 是 |
+| 6 | `.gitignore` | 新增忽略规则 | ✅ 是 |
+
+> **重要变更（2026-10-16 第二次优化）**：原先对 `lib/http/api.dart`、`lib/common/constants.dart`、`.github/workflows/build.yml` 的**硬编码修改已全部撤销**，改为「构建参数注入」。现在这三个文件**与上游保持一致**，同步上游时**不会再冲突**。详见第 3.2 节。
 
 对应提交：
 
 ```
+<最新>       refactor: URL 改为构建参数注入，消除上游同步冲突
 9a819ea9e  chore: 忽略本地签名密钥目录 .keys
 2202c3061  长按视频卡片改为弹出三点菜单，并将更新源指向 fork 仓库
 ```
@@ -136,45 +139,92 @@ import 'package:PiliPlus/utils/page_utils.dart';
 
 ---
 
-### 3.2 更新源指向本 fork 仓库
+### 3.2 仓库标识改为「构建参数注入」（2026-10-16 第二次优化）
 
-**需求背景**：App 内置「检查更新」功能会请求 GitHub Releases API。上游代码写死了作者仓库地址，导致 fork 构建的 App 会检查到上游的版本。必须指向本 fork，才能实现「fork 自己的版本更新」。
+**需求背景**：App 内置「检查更新」会请求 GitHub Releases API，且「关于」页会展示源码仓库地址。上游代码写死了作者仓库地址。
 
-**改动 1**：`lib/http/api.dart`（约第 414 行）
+**第一次做法（已废弃）**：直接在 `lib/http/api.dart` 与 `lib/common/constants.dart` 里把 URL 硬编码改为本 fork 地址。
+**问题**：这两个文件上游也会改动，导致每次同步上游都冲突。
 
-```dart
-// 修改前
-static const String latestApp =
-    'https://api.github.com/repos/bggRGjQaUbCoE/PiliPlus/releases';
-// 修改后
-static const String latestApp =
-    'https://api.github.com/repos/Godwin9527/PiliPlus/releases';
-```
+**当前做法（现行）**：改为通过构建参数 `pili.repo` 注入，**源码默认值 = 上游原样**。
 
-**改动 2**：`lib/common/constants.dart`（约第 3 行）
+#### (a) `lib/common/constants.dart`
 
 ```dart
-// 修改前
-static const sourceCodeUrl = 'https://github.com/bggRGjQaUbCoE/PiliPlus';
-// 修改后
-static const sourceCodeUrl = 'https://github.com/Godwin9527/PiliPlus';
+abstract final class Constants {
+  static const appName = 'PiliPlus';
+
+  /// 本 App 的源代码仓库地址。
+  /// 通过构建参数 `pili.repo` 注入（见 lib/scripts/build.ps1）。
+  /// 未注入时回退为上游原仓库，因此本文件无需为 fork 做任何硬编码修改。
+  static const String _repo = String.fromEnvironment(
+    'pili.repo',
+    defaultValue: 'bggRGjQaUbCoE/PiliPlus',
+  );
+  static const sourceCodeUrl = 'https://github.com/$_repo';
 ```
 
-> ⚠️ **合并时极易冲突**。上游若修改这两个文件，冲突解决策略：**保留本 fork 的 URL（Godwin9527），同时接受上游对该文件其他部分的改动**。
+#### (b) `lib/http/api.dart`（约第 413 行）
 
-**相关机制**（供理解，非改动点）：`lib/utils/update.dart` 的 `Update.checkUpdate()` 读取该 URL，用 `BuildConfig.buildTime` 与本仓库 Release 的 `created_at` 比对判断是否有新版本。
+```dart
+static const String latestApp =
+    "https://api.github.com/repos/"
+    "${const String.fromEnvironment('pili.repo', defaultValue: 'bggRGjQaUbCoE/PiliPlus')}"
+    "/releases";
+```
+
+> ⚠️ **注意引号**：这里**必须**用双引号 `"`，否则 Dart 不会做 `$` 插值，会得到字面量字符串。这是一个容易踩的坑。
+
+#### (c) `lib/scripts/build.ps1`
+
+在生成 `pili_release.json` 时，从 CI 环境变量 `GITHUB_REPOSITORY` 读取仓库标识并注入：
+
+```powershell
+$repo = $env:GITHUB_REPOSITORY
+
+$data = @{
+    'pili.name' = $versionName
+    'pili.code' = $versionCode
+    'pili.hash' = $commitHash
+    'pili.time' = $buildTime
+}
+if (-not [string]::IsNullOrWhiteSpace($repo)) {
+    $data['pili.repo'] = $repo
+}
+```
+
+> ⚠️ **关键细节（勿改）**：必须**在为空时省略该键**，而不能写入空字符串。因为 `String.fromEnvironment` 只在「**未定义**」时才使用 `defaultValue`；若传入空串，会得到空串，URL 会变成 `https://github.com/`（错误）。本地构建（无 `GITHUB_REPOSITORY`）时靠此逻辑回退到上游默认值。
+
+#### 为什么这样做
+
+| 好处 | 说明 |
+|---|---|
+| **源码零硬编码** | `api.dart` / `constants.dart` 与上游**逐字节一致**（仅多出解释性注释），同步上游时直接接受上游版本即可 |
+| **fork 身份集中** | 仓库标识只在 `build.ps1` 一处出现 |
+| **自动适配** | `GITHUB_REPOSITORY` 由 CI 自动提供 —— 构建发生在哪个仓库，App 就指向哪个仓库。上游自己构建时自动指向上游，本 fork 构建时自动指向本 fork，**无需任何手工配置** |
+| **5 个平台全覆盖** | Android / iOS / macOS / Windows / Linux 的 workflow 全部调用 `build.ps1` 并消费 `pili_release.json`，故全部受益 |
+
+#### 受影响的下游引用点（**均无需改动**，仅记录以便排查）
+
+以下位置读取 `Constants.sourceCodeUrl` 或 `Api.latestApp`，注入后自动生效：
+
+- `lib/utils/update.dart:25`（检查更新的 API 地址）
+- `lib/utils/update.dart:69`、`:146`（更新弹窗的跳转链接）
+- `lib/pages/about/view.dart:163`、`:176`、`:179`、`:190`（关于页展示源码地址）
+- `lib/pages/setting/pages/logs.dart:148`（日志页的 issue 链接）
+
+**验证方法**（已实测通过）：
+
+```bash
+# 默认 → 上游地址
+dart run --define=... 不传 → https://api.github.com/repos/bggRGjQaUbCoE/PiliPlus/releases
+# 注入 → fork 地址
+dart run --define=pili.repo=Godwin9527/PiliPlus → https://api.github.com/repos/Godwin9527/PiliPlus/releases
+```
 
 ---
 
-### 3.3 CI 构建配置
-
-`.github/workflows/build.yml`：3 处 `github.repository` 判断的仓库名，由 `bggRGjQaUbCoE/PiliPlus` 改为 `Godwin9527/PiliPlus`（约第 52、148、162 行）。
-
-> 说明：这些条件仅用于「PR 触发构建」场景。手动触发（`workflow_dispatch`）走的是 `github.event.inputs.build_xxx == 'true'` 分支，不受影响。合并时**保留本 fork 的仓库名**。
-
----
-
-### 3.4 `.gitignore`
+### 3.3 `.gitignore`
 
 新增一行（文件末尾附近）：
 
@@ -226,23 +276,27 @@ git push origin main
 - [ ] `lib/common/widgets/video_popup_menu.dart` 中仍存在 `buildVideoMenuItems` 与 `showVideoPopupMenu` 两个顶层函数
 - [ ] `VideoPopupMenu.itemBuilder` 仍然调用 `buildVideoMenuItems`（未改回内联）
 - [ ] 3 个视频卡片的 `onLongPress` 仍调用 `showVideoPopupMenu`，且 `onRemove` 已透传
-- [ ] `lib/http/api.dart` 的 `latestApp` 仍指向 `Godwin9527/PiliPlus`
-- [ ] `lib/common/constants.dart` 的 `sourceCodeUrl` 仍指向 `Godwin9527/PiliPlus`
-- [ ] `.github/workflows/build.yml` 中的仓库名仍为 `Godwin9527/PiliPlus`
+- [ ] `lib/common/constants.dart` 的 `sourceCodeUrl` 仍通过 `String.fromEnvironment('pili.repo', ...)` 派生
+- [ ] `lib/http/api.dart` 的 `latestApp` 仍通过 `String.fromEnvironment('pili.repo', ...)` 派生，且**使用的是双引号**
+- [ ] `lib/scripts/build.ps1` 仍包含 `$env:GITHUB_REPOSITORY` 注入逻辑，且**为空时省略 `pili.repo` 键**
 - [ ] `.gitignore` 中仍保留 `/.keys/`
+- [ ] `.github/workflows/build.yml` 与上游一致（此文件已**不再**做 fork 定制；若上游有改动，直接接受）
 - [ ] 全仓搜索 `bggRGjQaUbCoE`，确认**代码与配置中**无残留（注释、issue 链接中的该字样属正常，无需修改）
 
 ---
 
 ## 5. 冲突处理策略
 
+> **好消息**：经 2026-10-16 第二次优化后，本 fork 的**冲突面已大幅缩小**。原先最易冲突的 URL 相关文件已与上游一致。
+
 | 文件 | 冲突概率 | 处理原则 |
 |---|---|---|
-| `lib/http/api.dart` | 🔴 高 | 保留 fork 的 URL；接受上游其他改动 |
-| `lib/common/constants.dart` | 🔴 高 | 同上 |
-| `.github/workflows/build.yml` | 🟡 中 | 保留 fork 的仓库名；接受上游其他 CI 改动 |
+| `lib/http/api.dart` | 🟢 **低**（已消除） | 与上游一致，**直接接受上游版本**。仅在需保留 `pili.repo` 注释时作最小保留 |
+| `lib/common/constants.dart` | 🟢 **低**（已消除） | 同上 |
+| `lib/scripts/build.ps1` | 🟡 中 | 上游若改此文件，**保留 fork 的 `pili.repo` 注入逻辑**，同时接受上游其他改动 |
 | `lib/common/widgets/video_popup_menu.dart` | 🟡 中 | **保留函数抽取结构**；若上游新增/修改菜单项，将其并入 `buildVideoMenuItems` 函数体 |
 | 3 个 `video_card*.dart` | 🟡 中 | 保留 `onLongPress` → `showVideoPopupMenu` 的调用；接受上游其他改动 |
+| `.github/workflows/build.yml` | 🟢 **低**（已消除） | 与上游一致，**直接接受上游版本** |
 | `.gitignore` | 🟢 低 | 保留 `/.keys/` |
 
 ### 冲突解决的**最高原则**
@@ -256,11 +310,12 @@ git push origin main
 以下行为**严格禁止**，除非用户明确要求：
 
 1. ❌ 不得将 `onLongPress` 改回 `imageSaveDialog`（恢复封面放大预览）
-2. ❌ 不得将 `latestApp` / `sourceCodeUrl` 改回上游地址
+2. ❌ 不得移除 `pili.repo` 注入机制，或把 URL 改回硬编码
 3. ❌ 不得删除 `.gitignore` 中的 `/.keys/`
 4. ❌ 不得将 `VideoPopupMenu` 的菜单构造逻辑改回内联（破坏与长按的共用结构）
 5. ❌ 不得提交 `.keys/` 目录下的任何文件
 6. ❌ 不得在未告知用户的情况下，把本 fork 的定制"清理"为上游原状
+7. ❌ 不得在 `lib/scripts/build.ps1` 中把 `pili.repo` 写成空字符串（会导致 URL 错误）
 
 ---
 
@@ -299,7 +354,42 @@ gh workflow run Build --repo Godwin9527/PiliPlus \
 | 日期 | 说明 |
 |---|---|
 | 2026-10-16 | 初版。记录长按菜单改造、更新源指向 fork、CI 仓库名适配、.keys 忽略规则 |
+| 2026-10-16 | **第二次优化**：URL 改为构建参数（`pili.repo`）注入，撤销 `api.dart` / `constants.dart` / `build.yml` 的硬编码改动，上述文件恢复与上游一致；新增第 9 节「文档维护契约」 |
 
 ---
 
-> **维护提示**：若后续新增任何定制改动，**必须同步更新本文件**的第 2、3、5、8 节。本文件是本 fork 的"定制事实来源"（single source of truth）。
+## 9. 文档维护契约（对 AI 的强制要求）
+
+> **本节是本文件的核心约束，任何接手本仓库的 AI 都必须遵守，且无需用户提醒。**
+
+### 9.1 你必须做的事
+
+1. **修改代码前**：先阅读本文件，确认你要改的内容是否已在第 2、3 节登记。
+2. **修改代码时**：若你的改动**新增/修改/删除**了任何"定制"内容，**必须同步更新**：
+   - 第 1 节「最后更新的定制提交」（改为新提交哈希）
+   - 第 2 节「改动总览」表
+   - 第 3 节「逐项改动详解」（新增或修订对应小节）
+   - 第 5 节「冲突处理策略」（若涉及新文件）
+   - 第 8 节「变更记录」（追加一行）
+3. **同步上游后**：按第 4.3 节清单逐项验证，并把验证结果与遇到的新冲突模式补充进第 5 节。
+4. **发现本文件与实际代码不符时**：以**代码为准**修正本文件，并在第 8 节记录。
+
+### 9.2 判定标准
+
+> **一次任务是否完成，标准是「代码 + 本文件都已更新」。**
+> 只改代码不改文档，视为**任务未完成**。
+
+### 9.3 为什么这样要求
+
+本文件存在的唯一意义，是让**下一个 AI 或维护者**不必重新逆向整个仓库就能理解"哪些改动是刻意的"。
+如果它不同步更新，就会逐渐失真 —— 而**失真的说明文档比没有文档更危险**，因为它会误导 AI 回退掉正确的定制。
+
+### 9.4 自检问题（每次任务结束前问自己）
+
+- [ ] 我这次改的代码，有没有任何一项属于"相对上游的定制"？如果有，第 2、3 节更新了吗？
+- [ ] 第 8 节变更记录追加了吗？
+- [ ] 本文件里的行号、文件名、代码片段还准确吗？
+
+---
+
+> **维护提示**：本文件是本 fork 的"定制事实来源"（single source of truth）。

@@ -1,6 +1,16 @@
 abstract final class Constants {
   static const appName = 'PiliPlus';
-  static const sourceCodeUrl = 'https://github.com/Godwin9527/PiliPlus';
+
+  /// 本 App 的源代码仓库地址。
+  ///
+  /// 通过构建参数 `pili.repo` 注入（见 `lib/scripts/build.ps1` 与
+  /// `.github/workflows/build.yml`）。未注入时回退为上游原仓库，
+  /// 因此本文件无需为 fork 做任何硬编码修改。
+  static const String _repo = String.fromEnvironment(
+    'pili.repo',
+    defaultValue: 'bggRGjQaUbCoE/PiliPlus',
+  );
+  static const sourceCodeUrl = 'https://github.com/$_repo';
 
   // 27eb53fc9058f8c3  移动端 Android
   // 4409e2ce8ffd12b8  HD版
