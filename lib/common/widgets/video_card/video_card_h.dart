@@ -1,6 +1,5 @@
 import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/badge.dart';
-import 'package:PiliPlus/common/widgets/image/image_save.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/progress_bar/video_progress_indicator.dart';
 import 'package:PiliPlus/common/widgets/stat/stat.dart';
@@ -28,10 +27,10 @@ class VideoCardH extends StatelessWidget {
   final ValueChanged<int>? onViewLater;
   final VoidCallback? onRemove;
 
-  void onLongPress() => imageSaveDialog(
-    bvid: videoItem.bvid,
-    title: videoItem.title,
-    cover: videoItem.cover,
+  void onLongPress(BuildContext context) => showVideoPopupMenu(
+    context,
+    videoItem,
+    onRemove: onRemove,
   );
 
   @override
@@ -43,8 +42,10 @@ class VideoCardH extends StatelessWidget {
         clipBehavior: .none,
         children: [
           InkWell(
-            onLongPress: onLongPress,
-            onSecondaryTap: PlatformUtils.isMobile ? null : onLongPress,
+            onLongPress: () => onLongPress(context),
+            onSecondaryTap: PlatformUtils.isMobile
+                ? null
+                : () => onLongPress(context),
             onTap: onTap ?? () => pushVideoH(videoItem),
             child: Padding(
               padding: const .symmetric(
