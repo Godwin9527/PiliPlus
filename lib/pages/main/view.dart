@@ -13,8 +13,6 @@ import 'package:PiliPlus/utils/android/bindings.g.dart';
 import 'package:PiliPlus/utils/app_scheme.dart';
 import 'package:PiliPlus/utils/desktop/tray_controller.dart';
 import 'package:PiliPlus/utils/desktop/window_controller.dart';
-import 'package:PiliPlus/utils/extension/context_ext.dart';
-import 'package:PiliPlus/utils/extension/size_ext.dart';
 import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/mobile_observer.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
@@ -74,7 +72,7 @@ class _MainAppState extends PopScopeState<MainApp>
       }
     }
     if (!_mainController.useSideBar) {
-      _mainController.useBottomNav = MediaQuery.sizeOf(context).isPortrait;
+      _mainController.useBottomNav = MediaQuery.isPortraitOf(context);
     }
   }
 
@@ -238,16 +236,20 @@ class _MainAppState extends PopScopeState<MainApp>
 
   Widget _sideBar() {
     if (_mainController.navigationBars.length > 1) {
-      if (context.isTablet && _mainController.optTabletNav) {
+      if (MediaQuery.isTabletOf(context) && _mainController.optTabletNav) {
         return Padding(
           padding: const .only(top: 25),
           child: MediaQuery.removePadding(
             context: context,
             removeRight: true,
-            child: DrawerTheme(
-              data: DrawerThemeData(width: 130 + _padding.left),
-              child: Obx(
-                () => NavigationDrawer(
+            child: Obx(
+              () => DrawerTheme(
+                data: DrawerThemeData(
+                  width:
+                      (_mainController.hideSideBarLabel ? 80 : 130) +
+                      _padding.left,
+                ),
+                child: NavigationDrawer(
                   /// apply `lib/scripts/navigation_drawer.patch`
                   flex: 5,
                   backgroundColor: Colors.transparent,
@@ -255,13 +257,22 @@ class _MainAppState extends PopScopeState<MainApp>
                   selectedIndex: _mainController.selectedIndex.value,
                   header: Expanded(flex: 4, child: userAndSearchVertical()),
                   tilePadding: const .symmetric(vertical: 5, horizontal: 12),
-                  indicatorShape: const RoundedRectangleBorder(
-                    borderRadius: .all(.circular(16)),
-                  ),
+                  indicatorShape: _mainController.hideSideBarLabel
+                      ? const RoundedRectangleBorder(
+                          borderRadius: .all(.circular(12)),
+                        )
+                      : const RoundedRectangleBorder(
+                          borderRadius: .all(.circular(16)),
+                        ),
                   children: _mainController.navigationBars
                       .map(
                         (e) => NavigationDrawerDestination(
-                          label: Text(e.label),
+                          label: _mainController.hideSideBarLabel
+                              ? Semantics(
+                                  label: e.label,
+                                  child: const SizedBox.shrink(),
+                                )
+                              : Text(e.label),
                           icon: _buildIcon(type: e),
                           selectedIcon: _buildIcon(
                             type: e,
@@ -279,7 +290,7 @@ class _MainAppState extends PopScopeState<MainApp>
       return Obx(
         () => NavigationRail(
           groupAlignment: 0.5,
-          labelType: .selected,
+          labelType: _mainController.hideSideBarLabel ? .none : .selected,
           leading: userAndSearchVertical(),
           backgroundColor: Colors.transparent,
           onDestinationSelected: _mainController.setIndex,
