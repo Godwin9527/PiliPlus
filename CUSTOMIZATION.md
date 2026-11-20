@@ -16,7 +16,8 @@
 | 本 fork 仓库（origin） | `https://github.com/Godwin9527/PiliPlus` |
 | 默认分支 | `main` |
 | 项目类型 | Flutter 应用（BiliBili 第三方客户端） |
-| Flutter 版本 | `3.47.7`（见 `.fvmrc`） |
+| Flutter 版本 | `3.47.9`（见 `.fvmrc`，2026-11-20 随上游升级，原 3.47.7） |
+| 已同步到的上游版本 | `2.2.1`（上游提交 `217fb54f5`，2026-11-20 合并） |
 | 本文件最后更新 | 2026-11-20 |
 | 最后更新的定制提交 | `d2078937b`（2026-11-20 文档订正提交：`e49f217f9`，见第 8 节） |
 
@@ -397,7 +398,7 @@ git remote add upstream https://github.com/bggRGjQaUbCoE/PiliPlus.git
 git remote -v   # 确认 origin=本fork, upstream=上游
 ```
 
-> **状态（2026-11-20）**：本机已配置完成。首次 `git fetch upstream` 拉到的上游最新提交为 `217fb54f5 Release 2.2.1`，相对本 fork 基点 `bb2d86ca2` 共 **169 个提交、364 个文件**（Flutter `3.47.7` → `3.47.9`）。经逐文件核对，本次上游改动**与本 fork 的 5 项定制零冲突**（详见第 5 节「2026-11-20 冲突预判」）。
+> **状态（2026-11-20）**：本机已配置完成。`git fetch upstream` 拉到的上游最新提交为 `217fb54f5 Release 2.2.1`，相对本 fork 基点 `bb2d86ca2` 共 **169 个提交、364 个文件**（Flutter `3.47.7` → `3.47.9`）。已于当日以 `git merge --no-ff` 实际合并，**0 冲突**，合并提交 `e8665af2b`；验证记录见第 4.4 节，冲突预判与实测对照见第 5 节。
 
 ### 4.2 同步步骤
 
@@ -438,6 +439,41 @@ git push origin main
 - [ ] `.github/workflows/build.yml` 中 **android / ios / win_x64 三处** `github.repository` 判断仍为 `'Godwin9527/PiliPlus'`（本 fork 定制，**勿改回上游仓库名**；上游其他改动可直接接受）
 - [ ] 全仓搜索 `bggRGjQaUbCoE`，确认**代码与配置中**无残留（注释、issue 链接中的该字样属正常，无需修改）
 
+### 4.4 合并记录：2026-11-20 同步上游 2.2.1
+
+| 项 | 值 |
+|---|---|
+| 合并命令 | `git merge --no-ff upstream/main` |
+| 合并前 HEAD | `4627d8d2b`（tag `backup/pre-sync-2.2.1`） |
+| 上游目标 | `217fb54f5` Release 2.2.1（169 提交 / 364 文件） |
+| 合并提交 | `e8665af2b` |
+| 冲突 | **0 个** |
+| 结果版本 | pubspec `2.2.1+1`，Flutter `3.47.9` |
+
+**第 4.3 清单逐项验证结果：全部通过。**
+
+| # | 检查项 | 结果 |
+|---|---|---|
+| 1 | `buildVideoMenuItems` / `showVideoPopupMenu` 存在（各 2 处引用） | ✅ |
+| 2 | `itemBuilder` 第 51 行仍调用 `buildVideoMenuItems` | ✅ |
+| 3 | 3 个卡片 `onLongPress` → `showVideoPopupMenu`（`video_card_v:84` / `video_card_h:30` / `member_video:34`） | ✅ |
+| 4 | `constants.dart:10` `String.fromEnvironment('pili.repo')` | ✅ |
+| 5 | `api.dart:418` 双引号 `"${const String.fromEnvironment('pili.repo', ...)}"` | ✅ |
+| 6 | `build.ps1:57` `$env:GITHUB_REPOSITORY` 注入 + 空值省略键 | ✅ |
+| 7 | `build.ps1:17-30` `GITHUB_EVENT_PATH` + `^[vV]?(\d+\.\d+\.\d+)` 校验 | ✅ |
+| 8 | `update.dart` `_mirror`(26) / `_sources`(36-39，直连在前) / `_fetchLatestRelease`(42) | ✅ |
+| 9 | `update.dart` `forceMirror`(173) + `_downloadPrefix` 前缀复用(176) | ✅ |
+| 10 | `.gitignore:78` `/.keys/` | ✅ |
+| 11 | `build.yml` 3 处 `Godwin9527/PiliPlus` | ✅ |
+| 12 | `bggRGjQaUbCoE` 残留：仅在 `constants.dart:11` 默认值（**预期保留**）与若干上游注释中 | ✅ |
+
+**额外接口兼容性检查**（防上游重构打断定制代码）：
+
+- `PageUtils.menuPosition(Offset)` 签名未变，`video_popup_menu.dart` 调用仍有效 ✅
+- 5 个定制文件的全部 `package:PiliPlus/...` 内部导入路径均仍存在（合并删除了 `lib/utils/extension/context_ext.dart`，但定制文件未引用）✅
+
+> **未做的验证**：本机无 Flutter SDK（`flutter` / `dart` / `fvm` 均不在 PATH），**未执行 `flutter analyze` 与编译**。代码级正确性依赖提交时的 CI 构建确认。若下次在 CI 构建前发现报错，优先回退 tag `backup/pre-sync-2.2.1` 定位。
+
 ---
 
 ## 5. 冲突处理策略
@@ -460,6 +496,8 @@ git push origin main
 > 当不确定某段冲突属于"上游新改动"还是"本 fork 定制"时，**先查第 2、3 节**。若属于本 fork 定制 → **保留本 fork 版本**；若属于上游新功能 → **接受上游版本**；若两者都有 → **合并两者**（保留定制行为 + 引入上游新特性）。
 
 ### 2026-11-20 冲突预判（`bb2d86ca2` → `upstream/main` = `217fb54f5`）
+
+> **执行结果**：已实际合并，**0 冲突**，预判完全成立。合并提交 `e8665af2b`。
 
 上游 169 提交 / 364 文件（Flutter 3.47.7 → 3.47.9）。**逐文件核对结论：5 项定制全部零冲突。** 依据：
 
@@ -541,6 +579,7 @@ gh workflow run Build --repo Godwin9527/PiliPlus \
 | 2026-10-17 | **第三次优化**：`lib/utils/update.dart` 新增镜像回退（直连失败自动走 `gh-proxy.com`），修复大陆 DNS 污染导致检查更新失效的问题；新增第 3.3 节 |
 | 2026-10-17 | **第四次优化**：`lib/scripts/build.ps1` 新增 tag 版本推导，修复「Release tag 与 App 内版本号不一致」；新增第 3.4 节，原 3.4 `.gitignore` 顺延为 3.5 |
 | 2026-11-20 | **文档订正**：发现本文档第 2 / 4.3 / 5 节声称 `.github/workflows/build.yml` 的硬编码「已全部撤销」，实际未撤销（提交 `430d6631b` 的 diffstat 不含该文件）。按「以代码为准」原则订正：第 2 节表格新增 #8 行、新增第 3.6 节、更新第 4.3 验证清单、第 5 节冲突等级由「🟢 已消除」改为「🟡 中」、第 6 节新增第 10 条红线。同时配置 `upstream` 远程用于同步上游 |
+| 2026-11-20 | **同步上游 2.2.1**：`git merge --no-ff upstream/main`（169 提交 / 364 文件），**0 冲突**，合并提交 `e8665af2b`。Flutter `3.47.7 → 3.47.9`，pubspec `2.1.6+1 → 2.2.1+1`。5 项定制经 12 项清单逐项验证全部保留，新增第 4.4 节合并记录。合并前锚点 tag `backup/pre-sync-2.2.1`（`4627d8d2b`） |
 
 ---
 

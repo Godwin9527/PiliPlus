@@ -12,6 +12,9 @@
 | 本 fork 仓库 | `https://github.com/Godwin9527/PiliPlus` |
 | 默认分支 | `main` |
 | 技术栈 | Flutter / Dart |
+| Flutter 版本 | `3.47.9`（`.fvmrc`） |
+| 当前同步到的上游版本 | `2.2.1`（上游 `217fb54f5`，2026-11-20 合并，0 冲突） |
+| 合并前回退锚点 | tag `backup/pre-sync-2.2.1` → `4627d8d2b` |
 
 本仓库在上游基础上做了一些**本地定制**。这些定制是**有意为之**的，不是 bug。
 
