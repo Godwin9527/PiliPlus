@@ -17,14 +17,14 @@
 | 默认分支 | `main` |
 | 项目类型 | Flutter 应用（BiliBili 第三方客户端） |
 | Flutter 版本 | `3.47.7`（见 `.fvmrc`） |
-| 本文件最后更新 | 2026-10-17 |
-| 最后更新的定制提交 | `d2078937b` |
+| 本文件最后更新 | 2026-11-20 |
+| 最后更新的定制提交 | `d2078937b`（2026-11-20 另有一次文档订正提交，见第 8 节） |
 
 ---
 
 ## 2. 改动总览
 
-本 fork 相对上游的全部改动如下，**共涉及 7 个文件、5 个定制提交**。
+本 fork 相对上游的全部改动如下，**共涉及 8 个文件、5 个定制提交**。
 
 | # | 文件 | 改动类型 | 是否属于"定制"（禁止回退） |
 |---|---|---|---|
@@ -35,8 +35,13 @@
 | 5 | `lib/utils/update.dart` | 新增镜像回退逻辑 | ✅ 是 |
 | 6 | `lib/scripts/build.ps1` | 构建脚本：注入仓库标识 + 版本号跟随 Release tag | ✅ 是 |
 | 7 | `.gitignore` | 新增忽略规则 | ✅ 是 |
+| 8 | `.github/workflows/build.yml` | 3 处 `pull_request` 判断的仓库名改为本 fork | ✅ 是 |
 
-> **重要变更（2026-10-16 第二次优化）**：原先对 `lib/http/api.dart`、`lib/common/constants.dart`、`.github/workflows/build.yml` 的**硬编码修改已全部撤销**，改为「构建参数注入」。现在这三个文件**与上游保持一致**，同步上游时**不会再冲突**。详见第 3.2 节。
+> **重要变更（2026-10-16 第二次优化）**：原先对 `lib/http/api.dart`、`lib/common/constants.dart` 的**硬编码修改已撤销**，改为「构建参数注入」，这两个文件现已与上游一致（仅多出解释性注释），同步上游时**不会再冲突**。详见第 3.2 节。
+>
+> **⚠️ 订正（2026-11-20）**：上一版本文档曾声称 `.github/workflows/build.yml` 的硬编码也「已全部撤销」，**与事实不符**。提交 `430d6631b` 的说明里写了「撤销 api.dart / constants.dart / build.yml 的硬编码」，但其 diffstat 中**并不包含** `build.yml`，该文件至今仍保留 3 处 `Godwin9527/PiliPlus`。本次已按「以代码为准」原则订正文档（见第 2 节表 #8、第 3.6 节、第 4.3 清单、第 5 节、第 6 节第 10 条）。
+>
+> **结论**：`build.yml` **仍属本 fork 定制**，同步上游时**不能直接接受上游版本**，必须保留那 3 处仓库名。
 
 对应提交：
 
@@ -355,6 +360,32 @@ if (-not [string]::IsNullOrWhiteSpace($releaseTag) -and $releaseTag -match '^[vV
 
 ---
 
+### 3.6 `.github/workflows/build.yml`（2026-11-20 补记，此前文档漏记）
+
+**改动内容**：3 处 job 的 `pull_request` 触发条件中的仓库名，由上游的 `bggRGjQaUbCoE/PiliPlus` 改为本 fork 的 `Godwin9527/PiliPlus`。
+
+涉及位置（行号为 2026-11-20 抓取时的状态，上游改动后可能偏移，以 `grep -n 'github.repository'` 为准）：
+
+| job | 位置 | 当前值 |
+|---|---|---|
+| `android` | 约第 52 行 | `github.repository == 'Godwin9527/PiliPlus'` |
+| `ios` | 约第 148 行 | 同上 |
+| `win_x64` | 约第 162 行 | 同上 |
+
+```
+if: ${{ (github.event_name == 'pull_request' && github.repository == 'Godwin9527/PiliPlus') || github.event.inputs.build_android == 'true' }}
+```
+
+**作用范围**：**仅影响「仓库收到 PR 时是否自动构建」这一条触发路径**。`workflow_dispatch` 手动发版（`gh workflow run Build ...`）走的是 `||` 后半段，与此改动无关，改不改都能正常构建。
+
+**为什么要改**：不改的话，本 fork 上开 PR 时因仓库名不匹配，不会触发 CI 构建；改后本 fork 的 PR 也能跑构建。
+
+**为什么这次要专门补记**：此前文档三处（第 2 节、第 4.3 节、第 5 节）都写「该文件已恢复与上游一致」。若照此执行同步上游，会直接把这三行覆盖回上游值，导致上述触发条件失效，并让 `git merge` 时出现无法解释的"文档说有定制、实际被冲掉"的状态。
+
+**合并上游时**：保留这 3 处仓库名，其余上游改动（新增 job、依赖版本、action 版本等）**一律接受上游**。
+
+---
+
 ## 4. 上游同步标准流程（AI 执行指引）
 
 > **执行前提**：确认本文件第 2 节的「定制改动」清单已读完。
@@ -365,6 +396,8 @@ if (-not [string]::IsNullOrWhiteSpace($releaseTag) -and $releaseTag -match '^[vV
 git remote add upstream https://github.com/bggRGjQaUbCoE/PiliPlus.git
 git remote -v   # 确认 origin=本fork, upstream=上游
 ```
+
+> **状态（2026-11-20）**：本机已配置完成。首次 `git fetch upstream` 拉到的上游最新提交为 `217fb54f5 Release 2.2.1`，相对本 fork 基点 `bb2d86ca2` 共 **169 个提交、364 个文件**（Flutter `3.47.7` → `3.47.9`）。经逐文件核对，本次上游改动**与本 fork 的 5 项定制零冲突**（详见第 5 节「2026-11-20 冲突预判」）。
 
 ### 4.2 同步步骤
 
@@ -402,7 +435,7 @@ git push origin main
 - [ ] `lib/utils/update.dart` 中仍存在 `_mirror` 常量与 `_fetchLatestRelease()`，且 `_sources` 保持「直连在前、镜像在后」的顺序
 - [ ] `lib/utils/update.dart` 的 `onDownload` 仍支持 `forceMirror` 参数，下载 URL 仍带 `$prefix` 前缀
 - [ ] `.gitignore` 中仍保留 `/.keys/`
-- [ ] `.github/workflows/build.yml` 与上游一致（此文件已**不再**做 fork 定制；若上游有改动，直接接受）
+- [ ] `.github/workflows/build.yml` 中 **android / ios / win_x64 三处** `github.repository` 判断仍为 `'Godwin9527/PiliPlus'`（本 fork 定制，**勿改回上游仓库名**；上游其他改动可直接接受）
 - [ ] 全仓搜索 `bggRGjQaUbCoE`，确认**代码与配置中**无残留（注释、issue 链接中的该字样属正常，无需修改）
 
 ---
@@ -419,12 +452,32 @@ git push origin main
 | `lib/utils/update.dart` | 🟡 中 | **保留镜像回退结构**（`_mirror` / `_sources` / `_fetchLatestRelease` / `forceMirror`）；若上游改写了检查逻辑，需把镜像回退重新套用到新逻辑上，并保留 `forceMirror` 下载入口 |
 | `lib/common/widgets/video_popup_menu.dart` | 🟡 中 | **保留函数抽取结构**；若上游新增/修改菜单项，将其并入 `buildVideoMenuItems` 函数体 |
 | 3 个 `video_card*.dart` | 🟡 中 | 保留 `onLongPress` → `showVideoPopupMenu` 的调用；接受上游其他改动 |
-| `.github/workflows/build.yml` | 🟢 **低**（已消除） | 与上游一致，**直接接受上游版本** |
+| `.github/workflows/build.yml` | 🟡 中（2026-11-20 订正） | **保留** android / ios / win_x64 三处 `github.repository == 'Godwin9527/PiliPlus'`；接受上游其他改动。此前误记为「已消除」，勿再按「直接接受上游版本」处理 |
 | `.gitignore` | 🟢 低 | 保留 `/.keys/` |
 
 ### 冲突解决的**最高原则**
 
 > 当不确定某段冲突属于"上游新改动"还是"本 fork 定制"时，**先查第 2、3 节**。若属于本 fork 定制 → **保留本 fork 版本**；若属于上游新功能 → **接受上游版本**；若两者都有 → **合并两者**（保留定制行为 + 引入上游新特性）。
+
+### 2026-11-20 冲突预判（`bb2d86ca2` → `upstream/main` = `217fb54f5`）
+
+上游 169 提交 / 364 文件（Flutter 3.47.7 → 3.47.9）。**逐文件核对结论：5 项定制全部零冲突。** 依据：
+
+| 定制文件 | 上游是否改动 | 说明 |
+|---|---|---|
+| `video_popup_menu.dart` | ❌ 未动 | 整个文件与上游基点一致，合并必然干净 |
+| `lib/utils/update.dart` | ❌ 未动 | 同上 |
+| `lib/scripts/build.ps1` | ❌ 未动 | 同上 |
+| `lib/common/constants.dart` | ❌ 未动 | 同上 |
+| `video_card_h_member_video.dart` | ❌ 未动 | 同上 |
+| `.github/workflows/build.yml` | ❌ 未动 | 上游没碰，3 处 `Godwin9527` 安全 |
+| `video_card_h.dart` | ⚠️ 改了 1 行 | 第 191 行 `overflow: .clip` → `.ellipsis`，与第 30 行的 `onLongPress` **不同区域**，merge 不冲突 |
+| `video_card_v.dart` | ⚠️ 改了 1 行 | 第 204 行同类型改动，与第 84 行 `onLongPress` **不同区域**，merge 不冲突 |
+| `lib/http/api.dart` | ⚠️ 末尾新增 29 行 | 仅在文件末尾追加直播相关 API；本 fork 改的 `latestApp`（约 414 行）**未受影响** |
+| `.gitignore` | ⚠️ 末尾加 2 行 | 新增 `!/test/`、`!/test/**`；本 fork 的 `/.keys/`（第 78 行）**不受影响** |
+| `pubspec.yaml` | ✅ 需接受上游 | 版本 → `2.2.1+1`、Flutter → `3.47.9`、新增 `audio_service_mpris`/`nm`/`webview_all_linux`、`window_manager` 改为 pub 版本。本 fork 未改此文件，**直接接受上游** |
+
+> **注意**：`pubspec.yaml` 与 `.fvmrc` 接受上游后，本地构建需要 Flutter **3.47.9**（当前 `.fvmrc` 为 3.47.7）。CI 的 `flutter-version` 由上游 workflow 指定，无需手工改。
 
 ---
 
@@ -441,6 +494,7 @@ git push origin main
 7. ❌ 不得在 `lib/scripts/build.ps1` 中把 `pili.repo` 写成空字符串（会导致 URL 错误）
 8. ❌ 不得移除 `lib/utils/update.dart` 的镜像回退机制（`_mirror` / `_sources` / `_fetchLatestRelease`），否则大陆网络环境下检查更新会再次失效
 9. ❌ 不得移除 `lib/scripts/build.ps1` 的 tag 版本推导逻辑（否则 App 内版本号会退回固定值，与 Release tag 不一致）
+10. ❌ 不得把 `.github/workflows/build.yml` 中 3 处 `github.repository == 'Godwin9527/PiliPlus'` 改回上游仓库名（否则本 fork 的 PR 不再触发构建）
 
 ---
 
@@ -486,6 +540,7 @@ gh workflow run Build --repo Godwin9527/PiliPlus \
 | 2026-10-16 | **第二次优化**：URL 改为构建参数（`pili.repo`）注入，撤销 `api.dart` / `constants.dart` / `build.yml` 的硬编码改动，上述文件恢复与上游一致；新增第 9 节「文档维护契约」 |
 | 2026-10-17 | **第三次优化**：`lib/utils/update.dart` 新增镜像回退（直连失败自动走 `gh-proxy.com`），修复大陆 DNS 污染导致检查更新失效的问题；新增第 3.3 节 |
 | 2026-10-17 | **第四次优化**：`lib/scripts/build.ps1` 新增 tag 版本推导，修复「Release tag 与 App 内版本号不一致」；新增第 3.4 节，原 3.4 `.gitignore` 顺延为 3.5 |
+| 2026-11-20 | **文档订正**：发现本文档第 2 / 4.3 / 5 节声称 `.github/workflows/build.yml` 的硬编码「已全部撤销」，实际未撤销（提交 `430d6631b` 的 diffstat 不含该文件）。按「以代码为准」原则订正：第 2 节表格新增 #8 行、新增第 3.6 节、更新第 4.3 验证清单、第 5 节冲突等级由「🟢 已消除」改为「🟡 中」、第 6 节新增第 10 条红线。同时配置 `upstream` 远程用于同步上游 |
 
 ---
 

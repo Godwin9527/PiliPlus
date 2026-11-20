@@ -85,7 +85,7 @@ dart run --define=pili.repo=Godwin9527/PiliPlus <脚本>   # 验证 pili.repo �
 2. **镜像回退**：`lib/utils/update.dart` 内置了「直连 GitHub 失败 → 自动走 `gh-proxy.com` 镜像」的逻辑，用于应对国内 DNS 污染。**不要移除**。
 3. **签名密钥**：本地 `.keys/` 目录已被 gitignore，**绝不提交**。GitHub Secrets 已配置。
 4. **不要提交** `pili_release.json`（构建时生成，已 gitignore）。
-5. **`.github/workflows/build.yml` 与上游保持一致** —— 不要在此文件做 fork 定制。
+5. **`.github/workflows/build.yml` 有 fork 定制** —— android / ios / win_x64 三处 `github.repository == 'Godwin9527/PiliPlus'` 必须保留（仅影响 PR 自动构建，手动发版不受影响）。同步上游时保留这三处，其余照抄上游。
 
 ---
 
