@@ -27,7 +27,7 @@ class VideoCardH extends StatelessWidget {
   final ValueChanged<int>? onViewLater;
   final VoidCallback? onRemove;
 
-  void onLongPress(BuildContext context) => showVideoPopupMenu(
+  void onLongPress(BuildContext context) => onLongPressVideoCard(
     context,
     videoItem,
     onRemove: onRemove,

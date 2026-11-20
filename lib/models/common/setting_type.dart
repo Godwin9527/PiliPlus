@@ -7,6 +7,7 @@ import 'package:PiliPlus/pages/setting/models/privacy_settings.dart';
 import 'package:PiliPlus/pages/setting/models/recommend_settings.dart';
 import 'package:PiliPlus/pages/setting/models/reply_settings.dart';
 import 'package:PiliPlus/pages/setting/models/style_settings.dart';
+import 'package:PiliPlus/pages/setting/models/video_card_settings.dart';
 import 'package:PiliPlus/pages/setting/models/video_settings.dart';
 
 enum SettingType {
@@ -18,6 +19,7 @@ enum SettingType {
   replySetting('评论设置'),
   dynSetting('动态设置'),
   styleSetting('外观设置'),
+  videoCardSetting('视频卡片'),
   extraSetting('其它设置'),
   webdavSetting('WebDAV 设置'),
   about('关于'),
@@ -35,6 +37,7 @@ enum SettingType {
     .dynSetting => dynSettings,
     .replySetting => replySettings,
     .styleSetting => styleSettings,
+    .videoCardSetting => videoCardSettings,
     .extraSetting => extraSettings,
     .webdavSetting || .about => throw UnimplementedError(),
   };

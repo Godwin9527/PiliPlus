@@ -18,6 +18,7 @@
 | 项目类型 | Flutter 应用（BiliBili 第三方客户端） |
 | Flutter 版本 | `3.47.9`（见 `.fvmrc`，2026-11-20 随上游升级，原 3.47.7） |
 | 已同步到的上游版本 | `2.2.1`（上游提交 `217fb54f5`，2026-11-20 合并） |
+| 本 fork 当前版本 | `2.2.2`（`pubspec.yaml`；实际发版版本由 Release tag 决定） |
 | 本文件最后更新 | 2026-11-20 |
 | 最后更新的定制提交 | `d2078937b`（2026-11-20 文档订正提交：`e49f217f9`，见第 8 节） |
 
@@ -25,11 +26,11 @@
 
 ## 2. 改动总览
 
-本 fork 相对上游的全部改动如下，**共涉及 8 个文件、5 个定制提交**。
+本 fork 相对上游的全部改动如下，**共涉及 8 个文件、5 个定制提交**（2026-11-20 新增「视频卡片菜单定制」一批，见 #9–#14）。
 
 | # | 文件 | 改动类型 | 是否属于"定制"（禁止回退） |
 |---|---|---|---|
-| 1 | `lib/common/widgets/video_popup_menu.dart` | 重构 + 新增公共函数 | ✅ 是 |
+| 1 | `lib/common/widgets/video_popup_menu.dart` | 重构 + 新增公共函数 + 菜单项可配置 + 弹窗右对齐 | ✅ 是 |
 | 2 | `lib/common/widgets/video_card/video_card_v.dart` | 行为修改 | ✅ 是 |
 | 3 | `lib/common/widgets/video_card/video_card_h.dart` | 行为修改 | ✅ 是 |
 | 4 | `lib/pages/member_video/widgets/video_card_h_member_video.dart` | 行为修改 | ✅ 是 |
@@ -37,6 +38,13 @@
 | 6 | `lib/scripts/build.ps1` | 构建脚本：注入仓库标识 + 版本号跟随 Release tag | ✅ 是 |
 | 7 | `.gitignore` | 新增忽略规则 | ✅ 是 |
 | 8 | `.github/workflows/build.yml` | 3 处 `pull_request` 判断的仓库名改为本 fork | ✅ 是 |
+| 9 | `lib/models/common/video_menu_item.dart`（新增） | 菜单项枚举 `VideoMenuItem` | ✅ 是 |
+| 10 | `lib/pages/setting/models/video_card_settings.dart`（新增） | 「视频卡片」设置分类内容 | ✅ 是 |
+| 11 | `lib/pages/setting/pages/video_menu_sort.dart`（新增） | 菜单项开关 + 拖拽排序页 | ✅ 是 |
+| 12 | `lib/models/common/setting_type.dart` | 新增 `videoCardSetting` 分类 | ✅ 是 |
+| 13 | `lib/pages/setting/view.dart` + `lib/pages/settings_search/view.dart` | 设置入口与搜索索引接入新分类 | ✅ 是 |
+| 14 | `lib/utils/storage_pref.dart` + `lib/utils/storage_key.dart` | 新增 4 个配置键与读取方法 | ✅ 是 |
+| 15 | `lib/pages/rcmd/controller.dart` | 推荐流会话内去重 + 刷新保底 20 条 | ✅ 是 |
 
 > **重要变更（2026-10-16 第二次优化）**：原先对 `lib/http/api.dart`、`lib/common/constants.dart` 的**硬编码修改已撤销**，改为「构建参数注入」，这两个文件现已与上游一致（仅多出解释性注释），同步上游时**不会再冲突**。详见第 3.2 节。
 >
@@ -387,6 +395,99 @@ if: ${{ (github.event_name == 'pull_request' && github.repository == 'Godwin9527
 
 ---
 
+### 3.7 三点菜单项可配置（2026-11-20 新增）
+
+**需求背景**：上游的三点菜单固定 7 项、顺序写死，用户希望能自选显示哪些、并调整顺序。
+
+**新增文件**
+
+| 文件 | 作用 |
+|---|---|
+| `lib/models/common/video_menu_item.dart` | 枚举 `VideoMenuItem`（7 项，**新增项必须追加到末尾**，因为存储的是 `index`） |
+| `lib/pages/setting/models/video_card_settings.dart` | 「视频卡片」设置分类的三项内容 |
+| `lib/pages/setting/pages/video_menu_sort.dart` | 开关 + 拖拽排序页，改完即时落盘 |
+
+**存储键**（`lib/utils/storage_key.dart` / `lib/utils/storage_pref.dart`）
+
+| 键 | 类型 | 含义 |
+|---|---|---|
+| `videoMenuOrder` | `List<int>` | 显示顺序（`VideoMenuItem.index`）；为空 = 默认顺序 |
+| `videoMenuOff` | `List<int>` | 被隐藏的项 |
+| `videoMenuAlignRight` | `bool` | 长按菜单是否贴屏幕右侧，默认 `true` |
+| `longPressShowCover` | `bool` | 长按弹封面预览（上游行为），默认 `false` |
+
+**渲染改造**（`video_popup_menu.dart`）
+
+- `_VideoCustomAction` 增加 `id` 字段，7 个菜单项各自标注 `VideoMenuItem`；
+- 原返回语句改为 `return _applyMenuConfig(items, menuItemHeight);`；
+- `_applyMenuConfig()` 规则：
+  1. `videoMenuOrder` 非空 → 按保存顺序输出；
+  2. 未登记进配置的项（上游未来新增）**追加到末尾**，保证升级不丢功能；
+  3. `videoMenuOff` 中的项跳过；
+  4. 全部被隐藏时**保底保留「不感兴趣」**，避免弹出空菜单。
+
+> ⚠️ 合并上游时若上游新增了菜单项：保留 `_applyMenuConfig` 结构，把新项以 `_VideoCustomAction(.新枚举值, ...)` 形式加进列表，并在 `VideoMenuItem` **末尾**追加枚举值。
+
+---
+
+### 3.8 长按行为可切换 + 菜单贴右（2026-11-20 新增）
+
+**需求背景**：① 长按菜单原本靠左弹出，用户右手单手握持大屏手机时够不着；② 想保留「上游原版的封面预览」作为备选。
+
+**位置计算**（`showVideoPopupMenu`）
+
+```dart
+if (Pref.videoMenuAlignRight) {
+  // 锚点取「屏幕右边 8dp」，而非卡片边缘：
+  // 无论卡片多宽，菜单都稳定出现在右手拇指够得到的位置
+  return PageUtils.menuPosition(
+    Offset(MediaQuery.sizeOf(context).width - 8, bottom),
+  );
+}
+return PageUtils.menuPosition(
+  renderBox.localToGlobal(renderBox.size.bottomLeft(.zero)),
+);
+```
+
+> ⚠️ 不要改回只用 `bottomLeft`——那就是"靠左"的老行为。
+
+**长按入口统一收敛到 `onLongPressVideoCard()`**（`video_popup_menu.dart`）
+
+```dart
+void onLongPressVideoCard(BuildContext context, BaseSimpleVideoItemModel videoItem, {VoidCallback? onRemove}) {
+  if (Pref.longPressShowCover) {
+    imageSaveDialog(title: videoItem.title, cover: videoItem.cover, bvid: videoItem.bvid);
+  } else {
+    showVideoPopupMenu(context, videoItem, onRemove: onRemove);
+  }
+}
+```
+
+3 个卡片（`video_card_v` / `video_card_h` / `video_card_h_member_video`）的 `onLongPress` **统一调用此函数**，不再直接调 `showVideoPopupMenu`，也**不再各自 import `image_save.dart`**。
+
+---
+
+### 3.9 推荐流去重 + 刷新保底 20 条（2026-11-20 新增）
+
+**需求背景**：首页推荐频繁重复推送同一视频；且刷新时接口常只回 3–4 条，导致「刷一下就到底」。
+
+**改动文件**：`lib/pages/rcmd/controller.dart`（**仅此一个**）
+
+| 机制 | 实现 |
+|---|---|
+| 去重集合 | `Set<String> _shown`，本轮运行内出现过的 bvid，上限 3000，超出按插入顺序淘汰 |
+| 去重时机 | `handleListResponse()` 中先 `_dedupe(dataList)` 再走原有「保留上次刷新」逻辑 |
+| 刷新保底 | `onRefresh()` 首次请求后循环 `queryData(false)`，直到新增 ≥ **20** 条或已请求 **6** 次 |
+| 提前终止 | 某次补拉没有任何新条目 → 立即停止，避免空转 |
+| 提示位置 | `lastRefreshAt` 改为补拉结束后的累计新增数，不再固定为首次返回条数 |
+| 防白屏 | 若刷新回来的全是重复项（去重后为空）且未开启「保留上次刷新」，保留现有列表，不清空 |
+
+**副作用（刻意接受）**：一次刷新可能连发 2–6 个请求，耗时增加；推荐池窄时会更快耗尽，此时按实际数量显示，**不提示用户**。
+
+> ⚠️ 合并上游时：保留 `_dedupe` / `_shown` / 补拉循环。若上游重写了 `handleListResponse` 或 `onRefresh`，需把上述逻辑重新套用到新写法上。
+
+---
+
 ## 4. 上游同步标准流程（AI 执行指引）
 
 > **执行前提**：确认本文件第 2 节的「定制改动」清单已读完。
@@ -437,6 +538,12 @@ git push origin main
 - [ ] `lib/utils/update.dart` 的 `onDownload` 仍支持 `forceMirror` 参数，下载 URL 仍带 `$prefix` 前缀
 - [ ] `.gitignore` 中仍保留 `/.keys/`
 - [ ] `.github/workflows/build.yml` 中 **android / ios / win_x64 三处** `github.repository` 判断仍为 `'Godwin9527/PiliPlus'`（本 fork 定制，**勿改回上游仓库名**；上游其他改动可直接接受）
+- [ ] `video_popup_menu.dart` 中仍有 `_applyMenuConfig()`，且 `buildVideoMenuItems` 结尾是 `return _applyMenuConfig(items, menuItemHeight);`
+- [ ] `video_popup_menu.dart` 中仍有 `onLongPressVideoCard()`，且 3 个卡片的 `onLongPress` 都调用它
+- [ ] `showVideoPopupMenu` 中仍有 `Pref.videoMenuAlignRight` 分支（贴屏幕右缘 8dp）
+- [ ] `VideoMenuItem` 枚举仍存在，且新枚举值只追加在末尾
+- [ ] `SettingType` 中仍有 `videoCardSetting`，`setting_type.dart` 的 `settings` 分支仍映射到 `videoCardSettings`
+- [ ] `lib/pages/rcmd/controller.dart` 中仍有 `_shown` / `_dedupe` / `_minRefreshCount = 20` / `_maxFetchTimes = 6`，且 `onRefresh` 仍是补拉循环
 - [ ] 全仓搜索 `bggRGjQaUbCoE`，确认**代码与配置中**无残留（注释、issue 链接中的该字样属正常，无需修改）
 
 ### 4.4 合并记录：2026-11-20 同步上游 2.2.1
@@ -490,6 +597,12 @@ git push origin main
 | 3 个 `video_card*.dart` | 🟡 中 | 保留 `onLongPress` → `showVideoPopupMenu` 的调用；接受上游其他改动 |
 | `.github/workflows/build.yml` | 🟡 中（2026-11-20 订正） | **保留** android / ios / win_x64 三处 `github.repository == 'Godwin9527/PiliPlus'`；接受上游其他改动。此前误记为「已消除」，勿再按「直接接受上游版本」处理 |
 | `.gitignore` | 🟢 低 | 保留 `/.keys/` |
+| `lib/pages/rcmd/controller.dart` | 🟡 中（2026-11-20 新增） | 保留 `_shown` / `_dedupe` / 补拉循环；上游若重写刷新逻辑，把去重与补拉套到新写法上 |
+| `lib/models/common/video_menu_item.dart` | 🟢 低（新文件） | 上游不会创建同名文件；新枚举值**只追加末尾** |
+| `lib/pages/setting/models/video_card_settings.dart` | 🟢 低（新文件） | 同上 |
+| `lib/pages/setting/pages/video_menu_sort.dart` | 🟢 低（新文件） | 同上 |
+| `lib/models/common/setting_type.dart` | 🟡 中（2026-11-20 新增） | 保留 `videoCardSetting` 枚举值与 `settings` 分支；接受上游新增的其他分类 |
+| `lib/pages/setting/view.dart` / `settings_search/view.dart` | 🟡 中 | 保留「视频卡片」入口与 `...videoCardSettings` 搜索索引 |
 
 ### 冲突解决的**最高原则**
 
@@ -533,6 +646,10 @@ git push origin main
 8. ❌ 不得移除 `lib/utils/update.dart` 的镜像回退机制（`_mirror` / `_sources` / `_fetchLatestRelease`），否则大陆网络环境下检查更新会再次失效
 9. ❌ 不得移除 `lib/scripts/build.ps1` 的 tag 版本推导逻辑（否则 App 内版本号会退回固定值，与 Release tag 不一致）
 10. ❌ 不得把 `.github/workflows/build.yml` 中 3 处 `github.repository == 'Godwin9527/PiliPlus'` 改回上游仓库名（否则本 fork 的 PR 不再触发构建）
+11. ❌ 不得移除 `_applyMenuConfig()` 而把菜单项顺序改回写死（会让「视频卡片 → 菜单项与排序」设置失效）
+12. ❌ 不得把 `onLongPress` 直接改回 `showVideoPopupMenu`（必须走 `onLongPressVideoCard`，否则「长按弹封面预览」开关失效）
+13. ❌ 不得移除 `rcmd/controller.dart` 的 `_shown` / `_dedupe` / 补拉循环（否则重复推荐与「刷几下就到底」两个问题会复发）
+14. ❌ 不得把 `VideoMenuItem` 的新枚举值插到中间（存储的是 index，会整体错位）
 
 ---
 
@@ -580,6 +697,7 @@ gh workflow run Build --repo Godwin9527/PiliPlus \
 | 2026-10-17 | **第四次优化**：`lib/scripts/build.ps1` 新增 tag 版本推导，修复「Release tag 与 App 内版本号不一致」；新增第 3.4 节，原 3.4 `.gitignore` 顺延为 3.5 |
 | 2026-11-20 | **文档订正**：发现本文档第 2 / 4.3 / 5 节声称 `.github/workflows/build.yml` 的硬编码「已全部撤销」，实际未撤销（提交 `430d6631b` 的 diffstat 不含该文件）。按「以代码为准」原则订正：第 2 节表格新增 #8 行、新增第 3.6 节、更新第 4.3 验证清单、第 5 节冲突等级由「🟢 已消除」改为「🟡 中」、第 6 节新增第 10 条红线。同时配置 `upstream` 远程用于同步上游 |
 | 2026-11-20 | **同步上游 2.2.1**：`git merge --no-ff upstream/main`（169 提交 / 364 文件），**0 冲突**，合并提交 `e8665af2b`。Flutter `3.47.7 → 3.47.9`，pubspec `2.1.6+1 → 2.2.1+1`。5 项定制经 12 项清单逐项验证全部保留，新增第 4.4 节合并记录。合并前锚点 tag `backup/pre-sync-2.2.1`（`4627d8d2b`） |
+| 2026-11-20 | **v2.2.2 功能定制**：① 长按菜单改为贴屏幕右缘弹出，并新增「菜单弹出位置」开关；②「不感兴趣」原因弹窗改为整块靠右、单列、文字右对齐（含 web 兜底弹窗）；③ 新增「视频卡片」设置分类，支持菜单项开关与拖拽排序、长按行为切换（弹菜单 / 封面预览）；④ 首页推荐增加会话内 bvid 去重与刷新保底 20 条（最多补拉 6 次）。新增第 3.7 / 3.8 / 3.9 节，第 2 节新增 #9–#15，第 5 / 6 节同步扩充 |
 
 ---
 

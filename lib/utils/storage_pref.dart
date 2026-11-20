@@ -1126,4 +1126,24 @@ abstract final class Pref {
 
   static bool get autoWearMedal =>
       _setting.get(SettingBoxKey.autoWearMedal, defaultValue: false);
+
+  // ---------------- 视频卡片菜单定制（本 fork，见 CUSTOMIZATION.md 3.7） ----------------
+
+  /// 菜单项显示顺序，存 [VideoMenuItem.index]；为空表示「默认顺序」。
+  static List<int> get videoMenuOrder =>
+      (_setting.get(SettingBoxKey.videoMenuOrder) as List?)?.cast<int>() ??
+      const <int>[];
+
+  /// 被隐藏的菜单项，存 [VideoMenuItem.index]。
+  static List<int> get videoMenuOff =>
+      (_setting.get(SettingBoxKey.videoMenuOff) as List?)?.cast<int>() ??
+      const <int>[];
+
+  /// 长按卡片弹出的菜单是否贴屏幕右侧（默认是，便于右手单手操作）。
+  static bool get videoMenuAlignRight =>
+      _setting.get(SettingBoxKey.videoMenuAlignRight, defaultValue: true);
+
+  /// 长按卡片封面时的行为：true = 弹封面放大预览（上游原版），false = 弹三点菜单。
+  static bool get longPressShowCover =>
+      _setting.get(SettingBoxKey.longPressShowCover, defaultValue: false);
 }

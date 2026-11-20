@@ -80,8 +80,8 @@ class VideoCardV extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 长按封面 = 点击右下角三点按钮，弹出相同的操作菜单
-    void onLongPress() => showVideoPopupMenu(
+    // 长按封面：默认弹三点菜单；设置里可切回「封面放大预览」
+    void onLongPress() => onLongPressVideoCard(
       context,
       videoItem,
       onRemove: onRemove,

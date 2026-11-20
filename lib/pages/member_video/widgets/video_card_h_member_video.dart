@@ -31,7 +31,7 @@ class VideoCardHMemberVideo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    void onLongPress() => showVideoPopupMenu(context, videoItem);
+    void onLongPress() => onLongPressVideoCard(context, videoItem);
     return Material(
       type: MaterialType.transparency,
       child: Stack(

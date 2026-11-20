@@ -14,6 +14,7 @@
 | 技术栈 | Flutter / Dart |
 | Flutter 版本 | `3.47.9`（`.fvmrc`） |
 | 当前同步到的上游版本 | `2.2.1`（上游 `217fb54f5`，2026-11-20 合并，0 冲突） |
+| 本 fork 当前版本 | `2.2.2`（新增「视频卡片」设置分类、推荐去重） |
 | 合并前回退锚点 | tag `backup/pre-sync-2.2.1` → `4627d8d2b` |
 
 本仓库在上游基础上做了一些**本地定制**。这些定制是**有意为之**的，不是 bug。
@@ -100,4 +101,7 @@ dart run --define=pili.repo=Godwin9527/PiliPlus <脚本>   # 验证 pili.repo �
 | `lib/scripts/build.ps1` | 构建脚本，注入 `pili.repo` 等构建参数 |
 | `lib/build_config.dart` | 构建参数的 Dart 侧读取（`String.fromEnvironment`） |
 | `lib/utils/update.dart` | App 内「检查更新」逻辑 |
-| `lib/common/widgets/video_popup_menu.dart` | 视频卡片菜单（含本 fork 的长按定制） |
+| `lib/common/widgets/video_popup_menu.dart` | 视频卡片菜单（含本 fork 的长按定制、菜单项可配置、弹窗右对齐） |
+| `lib/models/common/video_menu_item.dart` | 菜单项枚举（新增项只能追加末尾） |
+| `lib/pages/setting/pages/video_menu_sort.dart` | 「视频卡片 → 菜单项与排序」设置页 |
+| `lib/pages/rcmd/controller.dart` | 首页推荐流（含本 fork 的去重 + 保底 20 条补拉） |

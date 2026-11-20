@@ -258,7 +258,12 @@ abstract final class SettingBoxKey {
       liveCdnUrl = 'liveCdnUrl',
       saveReply = 'saveReply',
       appFont = 'appFont',
-      foldDepth = 'foldDepth';
+      foldDepth = 'foldDepth',
+      // 视频卡片菜单定制（本 fork）
+      videoMenuOrder = 'videoMenuOrder',
+      videoMenuOff = 'videoMenuOff',
+      videoMenuAlignRight = 'videoMenuAlignRight',
+      longPressShowCover = 'longPressShowCover';
 }
 
 abstract final class LocalCacheKey {

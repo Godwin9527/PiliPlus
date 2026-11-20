@@ -84,6 +84,11 @@ class _SettingPageState extends State<SettingPage> {
       icon: Icon(Icons.style_outlined),
     ),
     _SettingsModel(
+      type: .videoCardSetting,
+      subtitle: '长按行为、三点菜单显示项与排序、菜单弹出位置',
+      icon: Icon(Icons.view_array_outlined),
+    ),
+    _SettingsModel(
       type: .extraSetting,
       subtitle: '震动、搜索、收藏、ai、评论、动态、代理、更新检查等',
       icon: Icon(Icons.extension_outlined),
