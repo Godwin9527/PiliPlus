@@ -28,13 +28,55 @@ class RcmdController extends CommonListController with RefreshImplMixin {
   /// 下拉刷新后至少凑够多少条「没出现过」的视频
   static const int _minRefreshCount = 20;
 
-  /// 刷新时最多请求几次（含首次），防止极端情况一直拉
+  /// 刷新时最多请求几次，防止极端情况一直拉
   static const int _maxFetchTimes = 6;
 
-  /// 本轮刷新累计新增（去重后）的条数
-  int _newSinceRefresh = 0;
+  @override
+  bool get isEnd => false;
 
-  /// 过滤掉已出现过的条目，并把剩余条目的 bvid 记入 [_shown]。
+  @override
+  void onInit() {
+    super.onInit();
+    page = 0;
+    queryData();
+  }
+
+  /// 请求指定 idx 的一页推荐（idx == 0 时接口按「下拉刷新」处理）
+  Future<List<dynamic>?> _fetchPage(int idx) async {
+    final LoadingState res = await switch (rcmdSource) {
+      RcmdSource.app => VideoHttp.rcmdVideoListApp(freshIdx: idx),
+      // 桌面端：与官方 Windows 客户端一致，每次请求 30 条
+      RcmdSource.desktop => VideoHttp.rcmdVideoList(
+        freshIdx: idx,
+        ps: 30,
+        desktop: true,
+      ),
+      RcmdSource.web => VideoHttp.rcmdVideoList(freshIdx: idx, ps: 20),
+    };
+    if (res is Success) {
+      final data = res.response;
+      if (data is List) return data;
+    }
+    return null;
+  }
+
+  /// 把 [list] 中没出现过的条目收进 [sink]，返回新增条数
+  int _collect(List list, List<dynamic> sink) {
+    var added = 0;
+    for (final e in list) {
+      final String? bvid = e is BaseSimpleVideoItemModel ? e.bvid : null;
+      if (bvid != null && bvid.isNotEmpty) {
+        if (_shown.contains(bvid)) continue;
+        if (_shown.length >= _maxShown) _shown.remove(_shown.first);
+        _shown.add(bvid);
+      }
+      sink.add(e);
+      added++;
+    }
+    return added;
+  }
+
+  /// 就地过滤掉已经出现过的条目（供首次加载与上拉加载使用）
   int _dedupe(List dataList) {
     if (dataList.isEmpty) return 0;
     dataList.removeWhere((e) {
@@ -50,14 +92,11 @@ class RcmdController extends CommonListController with RefreshImplMixin {
     return dataList.length;
   }
 
-  @override
-  bool get isEnd => false;
-
-  @override
-  void onInit() {
-    super.onInit();
-    page = 0;
-    queryData();
+  /// 把「新内容 + 旧内容」整体写回列表。新内容永远在最前面。
+  void _publish(List<dynamic> collected, List<dynamic>? old) {
+    final merged = List<dynamic>.of(collected);
+    if (old != null && old.isNotEmpty) merged.addAll(old);
+    loadingState.value = Success(merged);
   }
 
   @override
@@ -81,26 +120,11 @@ class RcmdController extends CommonListController with RefreshImplMixin {
 
   @override
   void handleListResponse(List dataList) {
-    // 先去掉本轮运行中已经出现过的视频
-    final added = _dedupe(dataList);
-    _newSinceRefresh += added;
+    // 首次加载 / 上拉加载：先去掉本次运行中已经出现过的视频
+    _dedupe(dataList);
 
-    if (enableSaveLastData && page == 0) {
-      if (loadingState.value case Success(:final response)) {
-        if (response != null && response.isNotEmpty) {
-          if (savedRcmdTip) {
-            lastRefreshAt = dataList.length;
-          }
-          if (response.length > 200) {
-            dataList.addAll(response.take(50));
-          } else {
-            dataList.addAll(response);
-          }
-        }
-      }
-    } else if (page == 0 && dataList.isEmpty) {
-      // 首次刷新回来的全是重复项（已被去重清空）→ 不要把列表清空成白屏，
-      // 继续显示现有内容，后面由补拉逻辑再尝试获取新视频
+    if (page == 0 && dataList.isEmpty) {
+      // 拉回来的全是重复项 → 别把列表清空成白屏，继续显示现有内容
       if (loadingState.value case Success(:final response)) {
         if (response != null && response.isNotEmpty) dataList.addAll(response);
       }
@@ -109,24 +133,63 @@ class RcmdController extends CommonListController with RefreshImplMixin {
 
   @override
   Future<void> onRefresh() async {
-    page = 0;
     isEnd = false;
-    _newSinceRefresh = 0;
-    await queryData();
-    if (loadingState.value is! Success) return;
+    lastRefreshAt = null;
 
-    // 接口常只回几条，导致「刷一下就到底」。这里补拉到保底条数。
-    var times = 1;
-    while (_newSinceRefresh < _minRefreshCount && times < _maxFetchTimes) {
-      final before = _newSinceRefresh;
-      await queryData(false);
-      times++;
-      // 这次没带来任何新东西 → 再拉也是白费，直接停
-      if (_newSinceRefresh <= before) break;
+    // 开启「保留首页推荐刷新」时，旧内容接在新内容后面
+    List<dynamic>? old;
+    if (enableSaveLastData && loadingState.value is Success) {
+      final data = (loadingState.value as Success).response;
+      if (data is List && data.isNotEmpty) {
+        old = data.length > 200 ? data.take(50).toList() : data;
+      }
     }
 
-    if (enableSaveLastData && savedRcmdTip && _newSinceRefresh > 0) {
-      lastRefreshAt = _newSinceRefresh;
+    final collected = <dynamic>[];
+    isLoading = true;
+    try {
+      var idx = 0; // 当前请求的 idx，0 表示重新拉一批
+      var requests = 0;
+      var idle = 0; // 连续无新增的请求数
+      var emptyPull = 0; // 全新一批也无新增的次数
+      while (collected.length < _minRefreshCount && requests < _maxFetchTimes) {
+        final list = await _fetchPage(idx);
+        requests++;
+        // 接口报错：保留已拿到的部分，不整页失败
+        if (list == null) break;
+
+        if (_collect(list, collected) > 0) {
+          idle = 0;
+          emptyPull = 0;
+          idx++;
+          // 已有内容先上屏，避免长时间只有转圈动画
+          _publish(collected, old);
+        } else if (idx == 0) {
+          // 全新一批也没新内容：允许再试一次，仍为空则判定推荐池见底
+          if (++emptyPull >= 2) break;
+        } else {
+          idle++;
+          if (idle >= 2) {
+            // 翻页连续空转 → 换一轮「下拉刷新」要一批新的
+            idx = 0;
+            idle = 0;
+          } else {
+            idx++;
+          }
+        }
+      }
+      page = idx == 0 ? 1 : idx; // 后续上拉从这里接着翻
+    } finally {
+      isLoading = false;
+    }
+
+    if (collected.isNotEmpty) {
+      _publish(collected, old);
+      lastRefreshAt = (enableSaveLastData && savedRcmdTip)
+          ? collected.length
+          : null;
+    } else if (loadingState.value is! Success) {
+      loadingState.value = Success(<dynamic>[]);
     }
   }
 
