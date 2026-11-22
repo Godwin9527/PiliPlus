@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  本 fork 定制：FileProvider 路径映射。
+  Dart 侧 `ApkDownloader` 把 APK 下载到 `getTemporaryDirectory()`（= Android 的 cacheDir）
+  下的 `update/` 子目录，这里把该目录暴露给系统安装器，因此无需任何存储权限。
+-->
+<paths>
+    <cache-path name="update" path="update/" />
+</paths>

@@ -18,15 +18,15 @@
 | 项目类型 | Flutter 应用（BiliBili 第三方客户端） |
 | Flutter 版本 | `3.47.9`（见 `.fvmrc`，2026-11-20 随上游升级，原 3.47.7） |
 | 已同步到的上游版本 | `2.2.1`（上游提交 `217fb54f5`，2026-11-20 合并） |
-| 本 fork 当前版本 | `2.2.4`（`pubspec.yaml`；实际发版版本由 Release tag 决定） |
+| 本 fork 当前版本 | `2.2.5`（`pubspec.yaml`；实际发版版本由 Release tag 决定） |
 | 本文件最后更新 | 2026-11-22 |
-| 最后更新的定制提交 | `d2078937b`（2026-11-22 文档更新随 v2.2.4 提交，见第 8 节） |
+| 最后更新的定制提交 | `d2078937b`（2026-11-22 文档更新随 v2.2.5 提交，见第 8 节） |
 
 ---
 
 ## 2. 改动总览
 
-本 fork 相对上游的全部改动如下，**共涉及 8 个文件、5 个定制提交**（2026-11-20 新增「视频卡片菜单定制」一批，见 #9–#14）。
+本 fork 相对上游的全部改动如下，**共涉及 27 个文件**（2026-11-20 新增「视频卡片菜单定制」一批，见 #9–#15；2026-11-22 新增 #16–#19 与 #20–#27）。
 
 | # | 文件 | 改动类型 | 是否属于"定制"（禁止回退） |
 |---|---|---|---|
@@ -34,7 +34,7 @@
 | 2 | `lib/common/widgets/video_card/video_card_v.dart` | 行为修改 | ✅ 是 |
 | 3 | `lib/common/widgets/video_card/video_card_h.dart` | 行为修改 | ✅ 是 |
 | 4 | `lib/pages/member_video/widgets/video_card_h_member_video.dart` | 行为修改 | ✅ 是 |
-| 5 | `lib/utils/update.dart` | 新增镜像回退逻辑 | ✅ 是 |
+| 5 | `lib/utils/update.dart` | 镜像回退 + **Android 应用内下载/安装** | ✅ 是 |
 | 6 | `lib/scripts/build.ps1` | 构建脚本：注入仓库标识 + 版本号跟随 Release tag | ✅ 是 |
 | 7 | `.gitignore` | 新增忽略规则 | ✅ 是 |
 | 8 | `.github/workflows/build.yml` | 3 处 `pull_request` 判断的仓库名改为本 fork | ✅ 是 |
@@ -49,6 +49,13 @@
 | 17 | `lib/plugin/pl_player/models/landscape_direction.dart`（新增） | 横屏倒向枚举 `LandscapeDirection` | ✅ 是 |
 | 18 | `lib/plugin/pl_player/controller.dart` | `changeOrientation` 支持手动全屏时固定倒向 | ✅ 是 |
 | 19 | `lib/pages/setting/models/play_settings.dart` | 新增「全屏横屏倒向」设置项 | ✅ 是 |
+| 20 | `lib/utils/apk_downloader.dart`（新增） | 应用内 APK 下载：镜像优先、断点续传、重试 | ✅ 是 |
+| 21 | `lib/utils/apk_installer.dart`（新增） | `MethodChannel` 封装（权限检查 / 跳设置 / 调起安装器） | ✅ 是 |
+| 22 | `lib/common/widgets/update_download_dialog.dart`（新增） | 下载进度弹窗 + 安装权限引导 | ✅ 是 |
+| 23 | `android/app/src/main/kotlin/com/example/piliplus/MainActivity.kt` | 注册 `piliplus/apk_installer` 通道 | ✅ 是 |
+| 24 | `android/app/src/main/AndroidManifest.xml` | `REQUEST_INSTALL_PACKAGES` + `FileProvider` | ✅ 是 |
+| 25 | `android/app/src/main/res/xml/file_paths.xml`（新增） | FileProvider 路径映射（`cache/update`） | ✅ 是 |
+| 26 | `android/app/build.gradle.kts` | 显式依赖 `androidx.core:core-ktx` | ✅ 是 |
 
 > **重要变更（2026-10-16 第二次优化）**：原先对 `lib/http/api.dart`、`lib/common/constants.dart` 的**硬编码修改已撤销**，改为「构建参数注入」，这两个文件现已与上游一致（仅多出解释性注释），同步上游时**不会再冲突**。详见第 3.2 节。
 >
@@ -546,6 +553,34 @@ void onLongPressVideoCard(BuildContext context, BaseSimpleVideoItemModel videoIt
 
 ---
 
+### 3.12 Android 应用内下载并安装更新（2026-11-22 新增）
+
+**需求背景**：上游的更新流程是「弹窗 → 选 GitHub / 镜像 → `launchURL` 跳系统浏览器 → 浏览器下载」。下载进度、保存位置、安装全部在浏览器里，跳转断开后 App 无法感知成功与否。希望改为 App 内完成下载，下载完直接调起安装器。
+
+**改动文件**：`update.dart`、`apk_downloader.dart`（新增）、`apk_installer.dart`（新增）、`update_download_dialog.dart`（新增）、`MainActivity.kt`、`AndroidManifest.xml`、`res/xml/file_paths.xml`（新增）、`build.gradle.kts`
+
+| 环节 | 实现 |
+|---|---|
+| 入口 | `checkUpdate` 在 `Platform.isAndroid` 时只给一个 `FilledButton('立即更新')`；桌面端保持原有 zip/exe/rpm/deb 按钮不变 |
+| 下载顺序 | **镜像优先、直连兜底**（`_downloadUrls`），与探测 release 信息的 `_sources`（直连优先）相反——安装包体积大，国内走镜像更快 |
+| 下载器 | `ApkDownloader.download`：`dio` 流式写文件、`Range` 断点续传、单源重试 2 次、全部源失败才报错、支持 `CancelToken` 取消 |
+| 落盘位置 | `getTemporaryDirectory()/update/`（= Android `cacheDir`），**无需任何存储权限** |
+| 进度 UI | `UpdateDownloadDialog`：百分比 + 已下载/总量 + 速度，120ms 节流刷新；下载中可取消 |
+| 安装桥接 | `MethodChannel('piliplus/apk_installer')` → `MainActivity` 用 `FileProvider` 生成 `content://` URI，`Intent.ACTION_VIEW` + `application/vnd.android.package-archive` 调起系统安装器 |
+| 权限 | Manifest 声明 `REQUEST_INSTALL_PACKAGES`；运行时用 `packageManager.canRequestPackageInstalls()` 检查，未授权时弹「去设置」跳 `ACTION_MANAGE_UNKNOWN_APP_SOURCES` |
+| FileProvider | authority = `${applicationId}.fileprovider`，`cache-path path="update/"`（见 `res/xml/file_paths.xml`） |
+| 兜底 | 弹窗底部「网络异常？改用浏览器下载」（走 `onDownload`，镜像前缀）；下载失败页也有「用浏览器下载」 |
+
+**必须知道的行为**：Android 系统会弹「是否安装此应用」确认框，**无法绕过**（非系统签名应用不能静默安装）。所以最终流程是「自动下载 → 自动弹安装框 → 用户点一次安装」。
+
+**背景下载限制**：切后台/锁屏时下载会暂停（Flutter 前台任务限制），弹窗内已提示用户保持前台。后台下载需引入前台服务插件，本次未做。
+
+**不支持的场景**：若设备上已安装的版本与本包签名不同（例如从别处装过第三方重打包版），安装会失败，需先卸载旧版。CI 使用 `.keys/piliplus.jks` 签名，与本 fork 历史版本一致。
+
+> ⚠️ 合并上游时：若上游重写了 `update.dart` 的 `checkUpdate` / `onDownload`，需把 Android 分支（`_startAndroidUpdate` + 单个「立即更新」按钮）重新插入；`MainActivity.kt` 的 `configureFlutterEngine` 必须保留 `super` 调用（AudioService 依赖它），Manifest 的 `REQUEST_INSTALL_PACKAGES` 与 FileProvider 声明不可删。
+
+---
+
 ## 4. 上游同步标准流程（AI 执行指引）
 
 > **执行前提**：确认本文件第 2 节的「定制改动」清单已读完。
@@ -606,6 +641,10 @@ git push origin main
 - [ ] `lib/plugin/pl_player/models/landscape_direction.dart` 仍存在 `LandscapeDirection` 枚举
 - [ ] `pl_player/controller.dart` 的 `changeOrientation` 仍在 `else` 分支开头保留「`orientation == null` 且 `Pref.landscapeDirection != .auto` 时按设置返回 landscape 模式」的分支
 - [ ] `play_settings.dart` 中仍有「全屏横屏倒向」的 `PopupModel`，且 `Pref.landscapeDirection` 读取正常（越界回落 `.auto`）
+- [ ] `lib/utils/update.dart` 中 `Platform.isAndroid` 分支仍是单个「立即更新」按钮 → `_startAndroidUpdate`，且 `_downloadUrls` 仍是**镜像在前、直连在后**
+- [ ] `lib/utils/apk_downloader.dart` / `lib/utils/apk_installer.dart` / `lib/common/widgets/update_download_dialog.dart` 三个文件仍存在
+- [ ] `MainActivity.kt` 仍注册 `piliplus/apk_installer` 通道，且 `configureFlutterEngine` **仍有 `super` 调用**
+- [ ] `AndroidManifest.xml` 仍含 `REQUEST_INSTALL_PACKAGES` 与 `${applicationId}.fileprovider` 的 `FileProvider`；`res/xml/file_paths.xml` 仍映射 `update/`
 - [ ] 全仓搜索 `bggRGjQaUbCoE`，确认**代码与配置中**无残留（注释、issue 链接中的该字样属正常，无需修改）
 
 ### 4.4 合并记录：2026-11-20 同步上游 2.2.1
@@ -665,6 +704,9 @@ git push origin main
 | `lib/pages/setting/pages/video_menu_sort.dart` | 🟢 低（新文件） | 同上 |
 | `lib/models/common/setting_type.dart` | 🟡 中（2026-11-20 新增） | 保留 `videoCardSetting` 枚举值与 `settings` 分支；接受上游新增的其他分类 |
 | `lib/pages/setting/view.dart` / `settings_search/view.dart` | 🟡 中 | 保留「视频卡片」入口与 `...videoCardSettings` 搜索索引 |
+| `MainActivity.kt` / `AndroidManifest.xml` | 🟡 中（2026-11-22 新增） | 保留 `piliplus/apk_installer` 通道、`super.configureFlutterEngine`、`REQUEST_INSTALL_PACKAGES`、FileProvider 声明；接受上游其他 Android 改动 |
+| `android/app/build.gradle.kts` | 🟡 中 | 保留 `androidx.core:core-ktx` 显式依赖；接受上游对 AGP / compileSdk 等的调整 |
+| `apk_downloader.dart` / `apk_installer.dart` / `update_download_dialog.dart` / `file_paths.xml` | 🟢 低（新文件） | 上游不会创建同名文件 |
 
 ### 冲突解决的**最高原则**
 
@@ -712,6 +754,9 @@ git push origin main
 12. ❌ 不得把 `onLongPress` 直接改回 `showVideoPopupMenu`（必须走 `onLongPressVideoCard`，否则「长按弹封面预览」开关失效）
 13. ❌ 不得移除 `rcmd/controller.dart` 的 `_shown` / `_dedupe` / 补拉循环（否则重复推荐与「刷几下就到底」两个问题会复发）
 14. ❌ 不得把 `VideoMenuItem` 的新枚举值插到中间（存储的是 index，会整体错位）
+15. ❌ 不得移除 `MainActivity.configureFlutterEngine` 中的 `super` 调用（AudioService 依赖它，会导致后台播放服务失效）
+16. ❌ 不得删除 Manifest 的 `REQUEST_INSTALL_PACKAGES`、`FileProvider` 声明，或 `res/xml/file_paths.xml`（会导致下载完无法安装）
+17. ❌ 不得把 `_downloadUrls` 的顺序改回「直连在前」（用户明确要求镜像优先，且安装包体积大，直连在国内易超时）
 
 ---
 
@@ -762,6 +807,7 @@ gh workflow run Build --repo Godwin9527/PiliPlus \
 | 2026-11-20 | **v2.2.2 功能定制**：① 长按菜单改为贴屏幕右缘弹出，并新增「菜单弹出位置」开关；②「不感兴趣」原因弹窗改为整块靠右、单列、文字右对齐（含 web 兜底弹窗）；③ 新增「视频卡片」设置分类，支持菜单项开关与拖拽排序、长按行为切换（弹菜单 / 封面预览）；④ 首页推荐增加会话内 bvid 去重与刷新保底 20 条（最多补拉 6 次）。新增第 3.7 / 3.8 / 3.9 节，第 2 节新增 #9–#15，第 5 / 6 节同步扩充 |
 | 2026-11-20 | **v2.2.3 修复**：v2.2.2 的推荐补拉存在合成顺序错误 —— 补拉结果经 `queryData(false)` 追加到**旧内容之后**，导致「刷新只看到 4 条、转圈数秒后消失且无新内容」。重写 `RcmdController.onRefresh`：自行驱动请求循环 + `_publish()` 整表合成（新内容恒在最前）、逐步上屏、翻页空转自动改拉新批次、`lastRefreshAt` 刷新期间置空。详见第 3.9 节 |
 | 2026-11-22 | **v2.2.4 定制**：① 修复「横屏全屏播放后返回列表，位置跳到更靠前处」——横屏时列表列数变化导致滚动位置被 clamp 且不恢复，现按「竖直位置记录 + 回竖屏还原」处理；② 新增「全屏横屏倒向」设置（跟随重力 / 手机顶部朝左 / 顶部朝右），解决右手单手握持时全屏方向不顺手。新增第 3.10 / 3.11 节，第 2 节新增 #16–#19 |
+| 2026-11-22 | **v2.2.5 定制**：Android 更新流程由「跳浏览器下载」改为「App 内下载 + 自动调起系统安装器」。新增 `ApkDownloader`（镜像优先、断点续传、单源重试 2 次）、`ApkInstaller`（MethodChannel）、`UpdateDownloadDialog`（进度/权限引导）；原生侧新增 `piliplus/apk_installer` 通道 + FileProvider + `REQUEST_INSTALL_PACKAGES`。**本仓库首次修改原生 Android 代码**。新增第 3.12 节，第 2 节新增 #20–#26，第 5 / 6 节同步扩充 |
 
 ---
 

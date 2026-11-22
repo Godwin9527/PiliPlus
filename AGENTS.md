@@ -14,8 +14,8 @@
 | 技术栈 | Flutter / Dart |
 | Flutter 版本 | `3.47.9`（`.fvmrc`） |
 | 当前同步到的上游版本 | `2.2.1`（上游 `217fb54f5`，2026-11-20 合并，0 冲突） |
-| 本 fork 当前版本 | `2.2.4`（横屏返回定位修复、全屏横屏倒向设置） |
-| 合并前回退锚点 | tag `backup/pre-v2.2.4`（v2.2.4 改动前） |
+| 本 fork 当前版本 | `2.2.5`（Android 应用内下载并安装更新） |
+| 合并前回退锚点 | tag `backup/pre-v2.2.5`（v2.2.5 改动前） |
 
 本仓库在上游基础上做了一些**本地定制**。这些定制是**有意为之**的，不是 bug。
 
@@ -90,6 +90,7 @@ dart run --define=pili.repo=Godwin9527/PiliPlus <脚本>   # 验证 pili.repo �
 3. **签名密钥**：本地 `.keys/` 目录已被 gitignore，**绝不提交**。GitHub Secrets 已配置。
 4. **不要提交** `pili_release.json`（构建时生成，已 gitignore）。
 5. **`.github/workflows/build.yml` 有 fork 定制** —— android / ios / win_x64 三处 `github.repository == 'Godwin9527/PiliPlus'` 必须保留（仅影响 PR 自动构建，手动发版不受影响）。同步上游时保留这三处，其余照抄上游。
+6. **本仓库有原生 Android 定制** —— `MainActivity.kt` 注册 `piliplus/apk_installer` 通道（必须保留 `super.configureFlutterEngine`），`AndroidManifest.xml` 声明 `REQUEST_INSTALL_PACKAGES` 与 `${applicationId}.fileprovider`，`res/xml/file_paths.xml` 映射 `cache/update`。这三处是应用内更新的基础，**删任何一处都会导致下载完成后无法安装**。
 
 ---
 
@@ -100,7 +101,12 @@ dart run --define=pili.repo=Godwin9527/PiliPlus <脚本>   # 验证 pili.repo �
 | `CUSTOMIZATION.md` | **本 fork 的定制事实来源**，必读 |
 | `lib/scripts/build.ps1` | 构建脚本，注入 `pili.repo` 等构建参数 |
 | `lib/build_config.dart` | 构建参数的 Dart 侧读取（`String.fromEnvironment`） |
-| `lib/utils/update.dart` | App 内「检查更新」逻辑 |
+| `lib/utils/update.dart` | App 内「检查更新」逻辑（含 Android 应用内下载入口） |
+| `lib/utils/apk_downloader.dart` | APK 下载器（镜像优先、断点续传、重试） |
+| `lib/utils/apk_installer.dart` | `piliplus/apk_installer` 通道的 Dart 侧封装 |
+| `lib/common/widgets/update_download_dialog.dart` | 下载进度弹窗 + 安装权限引导 |
+| `android/app/src/main/kotlin/com/example/piliplus/MainActivity.kt` | 注册安装通道（**勿删 `super.configureFlutterEngine`**） |
+| `android/app/src/main/res/xml/file_paths.xml` | FileProvider 路径映射 |
 | `lib/common/widgets/video_popup_menu.dart` | 视频卡片菜单（含本 fork 的长按定制、菜单项可配置、弹窗右对齐） |
 | `lib/models/common/video_menu_item.dart` | 菜单项枚举（新增项只能追加末尾） |
 | `lib/pages/setting/pages/video_menu_sort.dart` | 「视频卡片 → 菜单项与排序」设置页 |
