@@ -12,6 +12,7 @@ import 'package:PiliPlus/pages/setting/widgets/select_dialog.dart';
 import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
 import 'package:PiliPlus/plugin/pl_player/models/bottom_progress_behavior.dart';
 import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
+import 'package:PiliPlus/plugin/pl_player/models/landscape_direction.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/services/service_locator.dart';
 import 'package:PiliPlus/utils/android/android_helper.dart';
@@ -384,6 +385,17 @@ List<SettingsModel> get playSettings => [
     getSubtitle: () => '当前全屏方向：${Pref.fullScreenMode.desc}',
     onTap: _showFullScreenModeDialog,
   ),
+  // 本 fork 定制：手动点全屏时固定倒向的一侧，见 CUSTOMIZATION.md 3.11
+  if (PlatformUtils.isMobile)
+    PopupModel(
+      title: '全屏横屏倒向',
+      leading: const Icon(Icons.rotate_right),
+      value: () => Pref.landscapeDirection,
+      items: LandscapeDirection.values,
+      onSelected: (value, setState) => GStorage.setting
+          .put(SettingBoxKey.landscapeDirection, value.index)
+          .whenComplete(setState),
+    ),
   PopupModel(
     title: '底部进度条展示',
     leading: const Icon(Icons.border_bottom_outlined),

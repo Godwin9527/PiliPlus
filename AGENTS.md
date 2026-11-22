@@ -14,8 +14,8 @@
 | 技术栈 | Flutter / Dart |
 | Flutter 版本 | `3.47.9`（`.fvmrc`） |
 | 当前同步到的上游版本 | `2.2.1`（上游 `217fb54f5`，2026-11-20 合并，0 冲突） |
-| 本 fork 当前版本 | `2.2.2`（新增「视频卡片」设置分类、推荐去重） |
-| 合并前回退锚点 | tag `backup/pre-sync-2.2.1` → `4627d8d2b` |
+| 本 fork 当前版本 | `2.2.4`（横屏返回定位修复、全屏横屏倒向设置） |
+| 合并前回退锚点 | tag `backup/pre-v2.2.4`（v2.2.4 改动前） |
 
 本仓库在上游基础上做了一些**本地定制**。这些定制是**有意为之**的，不是 bug。
 
@@ -105,3 +105,6 @@ dart run --define=pili.repo=Godwin9527/PiliPlus <脚本>   # 验证 pili.repo �
 | `lib/models/common/video_menu_item.dart` | 菜单项枚举（新增项只能追加末尾） |
 | `lib/pages/setting/pages/video_menu_sort.dart` | 「视频卡片 → 菜单项与排序」设置页 |
 | `lib/pages/rcmd/controller.dart` | 首页推荐流（含本 fork 的去重 + 保底 20 条补拉） |
+| `lib/pages/rcmd/view.dart` | 首页推荐列表 UI（含横屏后回竖屏的滚动位置还原） |
+| `lib/plugin/pl_player/models/landscape_direction.dart` | 全屏横屏倒向枚举（顶部朝左 / 朝右） |
+| `lib/plugin/pl_player/controller.dart` | 播放器控制器（`changeOrientation` 含横屏倒向定制） |

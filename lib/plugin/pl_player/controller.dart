@@ -24,6 +24,7 @@ import 'package:PiliPlus/plugin/pl_player/models/double_tap_type.dart';
 import 'package:PiliPlus/plugin/pl_player/models/duration.dart';
 import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
 import 'package:PiliPlus/plugin/pl_player/models/heart_beat_type.dart';
+import 'package:PiliPlus/plugin/pl_player/models/landscape_direction.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/plugin/pl_player/models/video_fit_type.dart';
@@ -1474,6 +1475,21 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
             (mode == .ratio && (isVertical || screenRatio < kScreenRatio)))) {
       return portraitUpMode();
     } else {
+      // 本 fork 定制：手动点全屏按钮时没有传感器方向传入（orientation == null），
+      // 按设置固定倒向某一侧，方便右手单手握持；auto 保持上游行为。
+      // 见 CUSTOMIZATION.md 3.11。
+      if (orientation == null) {
+        final direction = Pref.landscapeDirection;
+        if (direction != .auto) {
+          final bool topLeft = direction == .topLeft;
+          // Flutter 在 Android / iOS 上 landscapeLeft/Right 语义相反，
+          // 这里统一按「手机顶部朝哪边」映射（与 fullscreen_sc.dart 一致）
+          if (Platform.isAndroid) {
+            return topLeft ? landscapeLeftMode() : landscapeRightMode();
+          }
+          return topLeft ? landscapeRightMode() : landscapeLeftMode();
+        }
+      }
       // https://github.com/flutter/flutter/issues/73651
       // https://github.com/flutter/flutter/issues/183708
       if (Platform.isAndroid) {

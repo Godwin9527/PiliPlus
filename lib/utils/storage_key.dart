@@ -8,6 +8,7 @@ abstract final class SettingBoxKey {
       defaultAudioQaCellular = 'defaultAudioQaCellular',
       autoPlayEnable = 'autoPlayEnable',
       fullScreenMode = 'fullScreenMode',
+      landscapeDirection = 'landscapeDirection',
       preferCodecs = 'preferCodecs',
       preferCodecsCellular = 'preferCodecsCellular',
       defaultToastOp = 'defaultToastOp',

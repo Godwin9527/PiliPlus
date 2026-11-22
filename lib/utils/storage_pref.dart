@@ -32,6 +32,7 @@ import 'package:PiliPlus/plugin/pl_player/models/audio_output_type.dart';
 import 'package:PiliPlus/plugin/pl_player/models/bottom_progress_behavior.dart';
 import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
 import 'package:PiliPlus/plugin/pl_player/models/hwdec_type.dart';
+import 'package:PiliPlus/plugin/pl_player/models/landscape_direction.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/utils/device_utils.dart';
 import 'package:PiliPlus/utils/extension/iterable_ext.dart';
@@ -1146,4 +1147,15 @@ abstract final class Pref {
   /// 长按卡片封面时的行为：true = 弹封面放大预览（上游原版），false = 弹三点菜单。
   static bool get longPressShowCover =>
       _setting.get(SettingBoxKey.longPressShowCover, defaultValue: false);
+
+  /// 手动点全屏按钮时的横屏倒向（本 fork 定制，见 CUSTOMIZATION.md 3.11）。
+  static LandscapeDirection get landscapeDirection {
+    final int? index = _setting.get(SettingBoxKey.landscapeDirection);
+    if (index == null ||
+        index < 0 ||
+        index >= LandscapeDirection.values.length) {
+      return .auto;
+    }
+    return LandscapeDirection.values[index];
+  }
 }

@@ -18,9 +18,9 @@
 | 项目类型 | Flutter 应用（BiliBili 第三方客户端） |
 | Flutter 版本 | `3.47.9`（见 `.fvmrc`，2026-11-20 随上游升级，原 3.47.7） |
 | 已同步到的上游版本 | `2.2.1`（上游提交 `217fb54f5`，2026-11-20 合并） |
-| 本 fork 当前版本 | `2.2.3`（`pubspec.yaml`；实际发版版本由 Release tag 决定） |
-| 本文件最后更新 | 2026-11-20 |
-| 最后更新的定制提交 | `d2078937b`（2026-11-20 文档订正提交：`e49f217f9`，见第 8 节） |
+| 本 fork 当前版本 | `2.2.4`（`pubspec.yaml`；实际发版版本由 Release tag 决定） |
+| 本文件最后更新 | 2026-11-22 |
+| 最后更新的定制提交 | `d2078937b`（2026-11-22 文档更新随 v2.2.4 提交，见第 8 节） |
 
 ---
 
@@ -45,6 +45,10 @@
 | 13 | `lib/pages/setting/view.dart` + `lib/pages/settings_search/view.dart` | 设置入口与搜索索引接入新分类 | ✅ 是 |
 | 14 | `lib/utils/storage_pref.dart` + `lib/utils/storage_key.dart` | 新增 4 个配置键与读取方法 | ✅ 是 |
 | 15 | `lib/pages/rcmd/controller.dart` | 推荐流会话内去重 + 刷新保底 20 条 | ✅ 是 |
+| 16 | `lib/pages/rcmd/view.dart` | 横屏后回竖屏还原列表滚动位置 | ✅ 是 |
+| 17 | `lib/plugin/pl_player/models/landscape_direction.dart`（新增） | 横屏倒向枚举 `LandscapeDirection` | ✅ 是 |
+| 18 | `lib/plugin/pl_player/controller.dart` | `changeOrientation` 支持手动全屏时固定倒向 | ✅ 是 |
+| 19 | `lib/pages/setting/models/play_settings.dart` | 新增「全屏横屏倒向」设置项 | ✅ 是 |
 
 > **重要变更（2026-10-16 第二次优化）**：原先对 `lib/http/api.dart`、`lib/common/constants.dart` 的**硬编码修改已撤销**，改为「构建参数注入」，这两个文件现已与上游一致（仅多出解释性注释），同步上游时**不会再冲突**。详见第 3.2 节。
 >
@@ -493,6 +497,55 @@ void onLongPressVideoCard(BuildContext context, BaseSimpleVideoItemModel videoIt
 
 ---
 
+### 3.10 横屏后回竖屏还原列表滚动位置（2026-11-22 新增）
+
+**需求背景**：推荐列表下滑较深后点进视频、横屏全屏播放，退出返回列表时，位置往往**上移到更靠前的位置**（例如第 8 个跳回第 2 个），且偶发、不稳定。
+
+**根因**：`rcmd/view.dart` 的 `SliverGrid` 用 `maxCrossAxisExtent: Pref.recommendCardWidth`，**列数随可用宽度走**。横屏时列数变多 → 列表总高度骤降到原来的 1/2～1/3 → Flutter 的 `ScrollPosition` 在内容变短时把 `pixels` **夹回** `maxScrollExtent`，且**不会自动恢复**。还能同时触发 `main/view.dart` 的 `useBottomNav` 横竖屏切换，再改变一次可用高度。
+
+**为什么"偶发"**：只有滚动深度超过横屏后的内容高度才会被夹；滚得浅完全正常。
+
+**改动文件**：`lib/pages/rcmd/view.dart`（**仅此一个**，只动 UI 层，不碰数据）
+
+| 机制 | 实现 |
+|---|---|
+| 位置记录 | `ScrollController` 监听里记录 `_portraitOffset`，**只在竖屏且不在横屏会话中**才写 |
+| 横屏判定 | `didChangeMetrics()` 读 `platformDispatcher.views.first.physicalSize`；`build()` 里再用 `MediaQuery.sizeOf` 核对一次（双保险） |
+| 冻结 | 进入横屏 → `_landscapeSeen = true`，此后所有位置变化（clamp 结果）一律不记录 |
+| 还原时机 | 回到竖屏 → `_pendingRestore` 置为目标值 → `addPostFrameCallback` 中 `jumpTo` |
+| 等待布局 | 若 `maxScrollExtent + 1 < target` 说明布局还没回到竖屏尺寸，逐帧重试（上限 20 帧） |
+| 视频页遮挡 | 列表被视频页挡住、不参与布局时还原会失败；`build()` 里发现 `_pendingRestore` 非空就再补一次，返回本页时完成 |
+| 失败放弃 | 重试超限（列表确实变短）→ 清空 `_pendingRestore`，交还给用户 |
+| 防误拉 | 还原期间用 `_restoring` 屏蔽监听回调；`_pendingRestore` 非空时不覆盖记录值，避免布局回弹的小值把目标污染 |
+
+**已知边界**：若列表本身变短（刷新后条数变少），目标位置可能不再可达，此时放弃还原（不会跳到列表最顶）。
+
+> ⚠️ 合并上游时：保留 `_portraitOffset` / `_landscapeSeen` / `_pendingRestore` / `_restoreOffset` 一整套。若上游把 `RcmdPage` 从 `StatefulWidget` 改成别的写法，需把 `WidgetsBindingObserver` 与监听重新接上。
+
+---
+
+### 3.11 全屏横屏倒向可选（2026-11-22 新增）
+
+**需求背景**：右手单手握持时，点全屏后系统把画面转到「手机顶部朝左」的一侧，手腕需要向内拧，握持不顺手；希望能自己选倒向。
+
+**根因**：`pl_player/controller.dart` 的 `changeOrientation` 在 `orientation == null`（手动点全屏、无传感器方向传入）时，Android 一律走 `landscapeLeftMode()`，方向写死，且**设置里没有任何可选项**（「默认全屏方向」只管横/竖/跟随重力）。
+
+**改动文件**：`landscape_direction.dart`（新增）、`pl_player/controller.dart`、`play_settings.dart`、`storage_key.dart`、`storage_pref.dart`
+
+| 环节 | 实现 |
+|---|---|
+| 枚举 | `LandscapeDirection { auto, topLeft, topRight }`，标签为「跟随重力感应（默认）」「手机顶部朝左」「手机顶部朝右」 |
+| 存储键 | `SettingBoxKey.landscapeDirection`；读取 `Pref.landscapeDirection`，越界/缺失一律回落 `.auto` |
+| 设置项 | 「音视频设置 → 全屏横屏倒向」，`PopupModel`，仅移动端显示 |
+| 生效条件 | 仅 `orientation == null`（手动点全屏）时生效；`auto` 走上游原逻辑；`mode == none/gravity` 已在前面 return，不受影响 |
+| 平台映射 | Android：topLeft→`landscapeLeftMode`、topRight→`landscapeRightMode`；iOS 相反（与 `fullscreen_sc.dart` 的处理一致，抵消 flutter/flutter#73651） |
+
+**给用户的说明**：若选中的方向与预期相反，改选另一个即可——两项互为反向，无需改代码。
+
+> ⚠️ 合并上游时：保留 `changeOrientation` 中 `orientation == null` 那一段分支；若上游重写该方法，需把「手动全屏按设置固定倒向」的分支重新插入 `else` 分支的开头。
+
+---
+
 ## 4. 上游同步标准流程（AI 执行指引）
 
 > **执行前提**：确认本文件第 2 节的「定制改动」清单已读完。
@@ -549,6 +602,10 @@ git push origin main
 - [ ] `VideoMenuItem` 枚举仍存在，且新枚举值只追加在末尾
 - [ ] `SettingType` 中仍有 `videoCardSetting`，`setting_type.dart` 的 `settings` 分支仍映射到 `videoCardSettings`
 - [ ] `lib/pages/rcmd/controller.dart` 中仍有 `_shown` / `_dedupe` / `_minRefreshCount = 20` / `_maxFetchTimes = 6`，且 `onRefresh` 仍是补拉循环
+- [ ] `lib/pages/rcmd/view.dart` 中仍有 `_portraitOffset` / `_landscapeSeen` / `_pendingRestore` / `_restoreOffset`，且 `_RcmdPageState` 仍 `with ... WidgetsBindingObserver` 并在 `initState` 里 `addObserver`
+- [ ] `lib/plugin/pl_player/models/landscape_direction.dart` 仍存在 `LandscapeDirection` 枚举
+- [ ] `pl_player/controller.dart` 的 `changeOrientation` 仍在 `else` 分支开头保留「`orientation == null` 且 `Pref.landscapeDirection != .auto` 时按设置返回 landscape 模式」的分支
+- [ ] `play_settings.dart` 中仍有「全屏横屏倒向」的 `PopupModel`，且 `Pref.landscapeDirection` 读取正常（越界回落 `.auto`）
 - [ ] 全仓搜索 `bggRGjQaUbCoE`，确认**代码与配置中**无残留（注释、issue 链接中的该字样属正常，无需修改）
 
 ### 4.4 合并记录：2026-11-20 同步上游 2.2.1
@@ -704,6 +761,7 @@ gh workflow run Build --repo Godwin9527/PiliPlus \
 | 2026-11-20 | **同步上游 2.2.1**：`git merge --no-ff upstream/main`（169 提交 / 364 文件），**0 冲突**，合并提交 `e8665af2b`。Flutter `3.47.7 → 3.47.9`，pubspec `2.1.6+1 → 2.2.1+1`。5 项定制经 12 项清单逐项验证全部保留，新增第 4.4 节合并记录。合并前锚点 tag `backup/pre-sync-2.2.1`（`4627d8d2b`） |
 | 2026-11-20 | **v2.2.2 功能定制**：① 长按菜单改为贴屏幕右缘弹出，并新增「菜单弹出位置」开关；②「不感兴趣」原因弹窗改为整块靠右、单列、文字右对齐（含 web 兜底弹窗）；③ 新增「视频卡片」设置分类，支持菜单项开关与拖拽排序、长按行为切换（弹菜单 / 封面预览）；④ 首页推荐增加会话内 bvid 去重与刷新保底 20 条（最多补拉 6 次）。新增第 3.7 / 3.8 / 3.9 节，第 2 节新增 #9–#15，第 5 / 6 节同步扩充 |
 | 2026-11-20 | **v2.2.3 修复**：v2.2.2 的推荐补拉存在合成顺序错误 —— 补拉结果经 `queryData(false)` 追加到**旧内容之后**，导致「刷新只看到 4 条、转圈数秒后消失且无新内容」。重写 `RcmdController.onRefresh`：自行驱动请求循环 + `_publish()` 整表合成（新内容恒在最前）、逐步上屏、翻页空转自动改拉新批次、`lastRefreshAt` 刷新期间置空。详见第 3.9 节 |
+| 2026-11-22 | **v2.2.4 定制**：① 修复「横屏全屏播放后返回列表，位置跳到更靠前处」——横屏时列表列数变化导致滚动位置被 clamp 且不恢复，现按「竖直位置记录 + 回竖屏还原」处理；② 新增「全屏横屏倒向」设置（跟随重力 / 手机顶部朝左 / 顶部朝右），解决右手单手握持时全屏方向不顺手。新增第 3.10 / 3.11 节，第 2 节新增 #16–#19 |
 
 ---
 
